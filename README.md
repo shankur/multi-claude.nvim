@@ -30,7 +30,7 @@ Manage multiple [Claude Code](https://github.com/anthropics/claude-code) session
 
 ```lua
 {
-  "ansharma/multi-claude.nvim",
+  "shankur/multi-claude.nvim",
   cmd = { "ClaudeSessions", "ClaudeNew", "ClaudeClose", "ClaudeNext", "ClaudePrev" },
   keys = {
     { "<leader>cs", "<cmd>ClaudeSessions<cr>", desc = "Claude Sessions" },

@@ -9,10 +9,11 @@ M._selected_session_id = nil
 
 local ns = vim.api.nvim_create_namespace("claude_sessions")
 
-function M._format_session_line(s, opts)
+function M._format_session_line(s, opts, idx)
   local icon = opts.icons[s.status] or "?"
   local status_str = "[" .. s.status .. "]"
-  return "  " .. icon .. " " .. s.name .. " " .. status_str
+  local num = idx and (idx .. " ") or "  "
+  return " " .. num .. icon .. " " .. s.name .. " " .. status_str
 end
 
 function M._session_hl(s)
@@ -87,7 +88,8 @@ function M.render()
 
       for _, s in ipairs(local_sessions) do
         local line_idx = #lines
-        local line = M._format_session_line(s, opts)
+        local idx = session_mod.get_index(s.id)
+        local line = M._format_session_line(s, opts, idx)
         table.insert(lines, line)
         M._line_to_session[line_idx] = s
         table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
@@ -111,7 +113,8 @@ function M.render()
 
       for _, s in ipairs(group.sessions) do
         local line_idx = #lines
-        local line = M._format_session_line(s, opts)
+        local idx = session_mod.get_index(s.id)
+        local line = M._format_session_line(s, opts, idx)
         table.insert(lines, line)
         M._line_to_session[line_idx] = s
         table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })

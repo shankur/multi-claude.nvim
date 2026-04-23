@@ -163,7 +163,8 @@ require("claude-sessions").setup({
   position = "left",           -- "left" or "right"
   claude_cmd = "claude",       -- path to claude binary
   claude_args = {},            -- extra args passed to every session
-  hosts = {},                  -- remote host configurations
+  hosts = {},                  -- remote host configurations (see Remote Hosts)
+  layout = nil,                -- path to a custom Zellij layout file (nil = built-in default)
   icons = {
     working = "●",
     waiting = "◉",
@@ -182,13 +183,53 @@ require("claude-sessions").setup({
 })
 ```
 
+### Zellij layout
+
+Each session is created with a 3-tab layout by default:
+
+| Tab | Content |
+|-----|---------|
+| `claude` | Claude Code (focused on open) |
+| `shell` | Plain shell in the working directory |
+| `editor` | `nvim` in the working directory |
+
+To use a custom layout file, set the `layout` option:
+
+```lua
+require("claude-sessions").setup({
+  layout = "~/.config/zellij/layouts/claude-session.kdl",
+})
+```
+
+In the layout file, use `{{claude_cmd}}` and `{{cwd}}` as placeholders:
+
+```kdl
+layout {
+    tab name="claude" focus=true {
+        pane command="zsh" close_on_exit=true {
+            args "-lc" "{{claude_cmd}}"
+            cwd "{{cwd}}"
+        }
+    }
+    tab name="shell" {
+        pane cwd="{{cwd}}"
+    }
+}
+```
+
 ## Zellij configuration
 
-For the best experience, set `default_mode "locked"` in your Zellij config so all keys pass through to Claude:
+For the best experience, unbind `Ctrl-l` (so it passes through to the terminal) and add any other passthrough keys you need:
 
 ```kdl
 // ~/.config/zellij/config.kdl
-default_mode "locked"
+keybinds {
+    normal {
+        unbind "Ctrl l"
+        bind "Ctrl r" { SwitchToMode "resize"; }
+        bind "Ctrl f" { ToggleFocusFullscreen; }
+    }
+}
 ```
 
 ## License

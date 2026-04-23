@@ -14,6 +14,7 @@ M.defaults = {
   idle_threshold_ms = 2000, -- ms of no output before marking "waiting"
   auto_open = false,
   hosts = {}, -- { {name="server1", addr="user@host", cwd="~/project", ssh_args={}} }
+  layout = nil, -- path to a custom zellij layout file, or nil to use built-in default
   keymaps = {
     select = "<CR>",
     new_session = "n",

@@ -16,69 +16,105 @@ local function ssh_base(host)
   return cmd
 end
 
+--- Build the zellij layout KDL string for a session.
+---@param claude_cmd_str string  full claude command to run
+---@param cwd string|nil  working directory
+---@param session_name string  used in the kill-after command
+---@return string
+local function build_layout(claude_cmd_str, cwd, session_name)
+  local opts = config.options
+  local layout_file = opts.layout
+
+  -- If user provided a layout file, read and substitute placeholders
+  if layout_file then
+    layout_file = vim.fn.expand(layout_file)
+    local f = io.open(layout_file, "r")
+    if f then
+      local content = f:read("*a")
+      f:close()
+      content = content:gsub("{{claude_cmd}}", claude_cmd_str)
+      content = content:gsub("{{cwd}}", cwd or "~")
+      return content
+    end
+  end
+
+  -- Built-in default: 3 tabs — claude (focused), shell, shell
+  local kill_after = "zellij kill-session -y " .. vim.fn.shellescape(session_name)
+    .. " && zellij delete-session " .. vim.fn.shellescape(session_name)
+  local claude_inner = "unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after
+  local cwd_str = cwd or "~"
+
+  return string.format([[
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:tab-bar"
+    }
+    tab name="claude" focus=true {
+        pane command="zsh" close_on_exit=true {
+            args "-lc" %q
+            cwd %q
+        }
+    }
+    tab name="shell" {
+        pane cwd=%q
+    }
+    tab name="editor" {
+        pane command="nvim" cwd=%q
+    }
+}
+]], claude_inner, cwd_str, cwd_str, cwd_str)
+end
+
+--- Build the claude command string for a host.
+---@param host table|nil
+---@return string
+local function build_claude_cmd(host)
+  local opts = config.options
+  local cmd = opts.claude_cmd
+  if host and host.model then
+    cmd = cmd .. " --model '" .. host.model .. "'"
+  end
+  if host and host.skip_permissions then
+    cmd = cmd .. " --dangerously-skip-permissions"
+  end
+  for _, arg in ipairs(opts.claude_args) do
+    cmd = cmd .. " " .. arg
+  end
+  return cmd
+end
+
 --- Create a detached zellij session running claude on a remote host.
 ---@param host table
 ---@param session_name string
 function M.create_session(host, session_name)
-  local opts = config.options
-
-  -- Check if session already exists with a running pane
+  -- Check if session already exists
   local existing = M.list_sessions(host)
   for _, name in ipairs(existing) do
     if name == session_name then
-      -- Session exists, just attach to it (don't create new claude pane)
       return true
     end
   end
 
-  -- Step 1: Create detached zellij session
-  local create_cmd = ssh_base(host)
-  vim.list_extend(create_cmd, { "--", "TERM=xterm-256color", "zellij", "attach", "--create-background", session_name })
-  local out1 = vim.fn.system(create_cmd)
-  if vim.v.shell_error ~= 0 then
-    if not out1:match("already exists") then
-      return false
-    end
-  end
+  local claude_cmd_str = build_claude_cmd(host)
+  local layout_str = build_layout(claude_cmd_str, host.cwd, session_name)
 
-  -- Step 2: Run claude in a new pane
-  local claude_cmd_str = opts.claude_cmd
-  if host.model then
-    claude_cmd_str = claude_cmd_str .. " --model '" .. host.model .. "'"
-  end
-  if host.skip_permissions then
-    claude_cmd_str = claude_cmd_str .. " --dangerously-skip-permissions"
-  end
-  for _, arg in ipairs(opts.claude_args) do
-    claude_cmd_str = claude_cmd_str .. " " .. arg
-  end
+  -- Write layout to a temp file on remote, start session with nohup, clean up
+  local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"
+  local write_cmd = ssh_base(host)
+  vim.list_extend(write_cmd, { "--", "cat > " .. tmp })
+  vim.fn.system(write_cmd, layout_str)
+  if vim.v.shell_error ~= 0 then return false end
 
-  local run_cmd = ssh_base(host)
-  local run_str = "TERM=xterm-256color zellij -s " .. vim.fn.shellescape(session_name)
-    .. " run -c --name " .. vim.fn.shellescape(session_name)
-  local kill_after = "zellij kill-session -y " .. vim.fn.shellescape(session_name)
-    .. " && zellij delete-session " .. vim.fn.shellescape(session_name)
-  if host.cwd then
-    run_str = run_str .. " -- env ZELLIJ=skip zsh -lc " .. vim.fn.shellescape("unalias exit 2>/dev/null; cd " .. host.cwd .. " && " .. claude_cmd_str .. "; " .. kill_after)
-  else
-    run_str = run_str .. " -- env ZELLIJ=skip zsh -lc " .. vim.fn.shellescape("unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after)
-  end
-  vim.list_extend(run_cmd, { "--", run_str })
-  local out2 = vim.fn.system(run_cmd)
-  if vim.v.shell_error ~= 0 then
-    return false
-  end
+  local start_cmd = ssh_base(host)
+  local start_str = "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
+    .. vim.fn.shellescape(session_name)
+    .. " --new-session-with-layout " .. tmp
+    .. " > /dev/null 2>&1 &"
+  vim.list_extend(start_cmd, { "--", start_str })
+  vim.fn.system(start_cmd)
+  if vim.v.shell_error ~= 0 then return false end
 
-  -- Step 3: Close the original shell pane, leaving only claude
-  local close_cmd = ssh_base(host)
-  local close_str = "TERM=xterm-256color zellij -s " .. vim.fn.shellescape(session_name)
-    .. " action close-pane -p terminal_0"
-  vim.list_extend(close_cmd, { "--", close_str })
-  vim.fn.system(close_cmd)
-  if vim.v.shell_error ~= 0 then
-    return false
-  end
-
+  vim.fn.system({ "sleep", "1" })
   return true
 end
 
@@ -93,8 +129,8 @@ function M.attach_cmd(host, session_name)
       table.insert(cmd, arg)
     end
   end
-  -- Set ZELLIJ to skip auto-attach in remote .zshrc, set TERM, then attach
-  local remote_cmd = "export ZELLIJ=skip TERM=xterm-256color; zellij attach --force-run-commands " .. vim.fn.shellescape(session_name)
+  local remote_cmd = "export ZELLIJ=skip TERM=xterm-256color; zellij attach --force-run-commands "
+    .. vim.fn.shellescape(session_name)
   vim.list_extend(cmd, { host.addr, "--", remote_cmd })
   return cmd
 end
@@ -143,8 +179,6 @@ end
 --- Create a local zellij session running claude.
 ---@param session_name string
 function M.create_local_session(session_name)
-  local opts = config.options
-
   -- Check if session already exists
   local existing = M.list_local_sessions()
   for _, name in ipairs(existing) do
@@ -153,31 +187,25 @@ function M.create_local_session(session_name)
     end
   end
 
-  -- Step 1: Create detached zellij session
-  vim.fn.system({ "zellij", "attach", "--create-background", session_name })
-  if vim.v.shell_error ~= 0 then
-    return false
-  end
+  local claude_cmd_str = build_claude_cmd(nil)
+  local layout_str = build_layout(claude_cmd_str, nil, session_name)
 
-  -- Step 2: Run claude in a new pane
-  local claude_cmd_str = opts.claude_cmd
-  for _, arg in ipairs(opts.claude_args) do
-    claude_cmd_str = claude_cmd_str .. " " .. arg
-  end
+  -- Write layout to temp file and start session with nohup
+  local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"
+  local f = io.open(tmp, "w")
+  if not f then return false end
+  f:write(layout_str)
+  f:close()
 
-  local kill_after = "zellij kill-session -y " .. vim.fn.shellescape(session_name)
-    .. " && zellij delete-session " .. vim.fn.shellescape(session_name)
-  local run_str = "zellij -s " .. vim.fn.shellescape(session_name)
-    .. " run -c --name " .. vim.fn.shellescape(session_name)
-    .. " -- zsh -lc " .. vim.fn.shellescape("unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after)
-  vim.fn.system({ "zsh", "-c", run_str })
-  if vim.v.shell_error ~= 0 then
-    return false
-  end
+  vim.fn.system({ "zsh", "-c",
+    "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
+    .. vim.fn.shellescape(session_name)
+    .. " --new-session-with-layout " .. tmp
+    .. " > /dev/null 2>&1 &"
+  })
+  if vim.v.shell_error ~= 0 then return false end
 
-  -- Step 3: Close the original shell pane
-  vim.fn.system({ "zsh", "-c", "zellij -s " .. vim.fn.shellescape(session_name) .. " action close-pane -p terminal_0" })
-
+  vim.fn.system({ "sleep", "1" })
   return true
 end
 

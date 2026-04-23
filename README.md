@@ -47,11 +47,17 @@ All sessions run inside [Zellij](https://zellij.dev/) for persistence — close 
   cmd = { "ClaudeSessions", "ClaudeNew", "ClaudeClose", "ClaudeNext", "ClaudePrev", "ClaudeList", "ClaudeClean", "ClaudeDiscover" },
   keys = {
     { "<leader>cc", "<cmd>ClaudeDiscover<cr>", desc = "Discover Claude Sessions" },
-    { "<leader>cn", "<cmd>ClaudeNew<cr>", desc = "New Claude Session" },
-    { "<leader>cN", "<cmd>ClaudeNext<cr>", desc = "Next Claude Session" },
-    { "<leader>cP", "<cmd>ClaudePrev<cr>", desc = "Prev Claude Session" },
+    { "<leader>cn", "<cmd>ClaudeNew<cr>",      desc = "New Claude Session" },
+    { "<leader>cN", "<cmd>ClaudeNext<cr>",     desc = "Next Claude Session" },
+    { "<leader>cP", "<cmd>ClaudePrev<cr>",     desc = "Prev Claude Session" },
+    { "<leader>cx", "<cmd>ClaudeClean<cr>",    desc = "Clean Claude Sessions" },
   },
-  opts = {},
+  opts = {
+    -- Optional: configure remote hosts
+    hosts = {
+      { name = "server1", addr = "user@10.0.0.1", cwd = "~/project", model = "opus", skip_permissions = true },
+    },
+  },
 }
 ```
 

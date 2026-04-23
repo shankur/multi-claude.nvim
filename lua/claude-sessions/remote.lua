@@ -142,7 +142,7 @@ function M.attach_cmd(host, session_name)
       table.insert(cmd, arg)
     end
   end
-  local remote_cmd = "export ZELLIJ=skip TERM=xterm-256color; zellij attach --force-run-commands "
+  local remote_cmd = "export ZELLIJ=skip TERM=xterm-256color; zellij attach "
     .. vim.fn.shellescape(session_name)
   vim.list_extend(cmd, { host.addr, "--", remote_cmd })
   return cmd
@@ -233,7 +233,7 @@ end
 ---@param session_name string
 ---@return table
 function M.local_attach_cmd(session_name)
-  return { "zellij", "attach", "--force-run-commands", session_name }
+  return { "zellij", "attach", session_name }
 end
 
 --- List local zellij sessions.

@@ -149,8 +149,8 @@ Each session runs Claude inside a Zellij session (both local and remote). This p
 - **Clean lifecycle** — when Claude exits (`/exit`), the Zellij session is automatically cleaned up
 
 For remote sessions, the plugin:
-1. Creates a detached Zellij session on the server via SSH
-2. Runs Claude inside it
+1. Generates a Zellij layout with the Claude command embedded
+2. Creates a detached Zellij session on the server via SSH using that layout
 3. Attaches to it from Neovim via `ssh -t host -- zellij attach`
 
 ## Configuration
@@ -205,6 +205,15 @@ In the layout file, use `{{claude_cmd}}` and `{{cwd}}` as placeholders:
 
 ```kdl
 layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="tab-bar"
+        }
+        children
+        pane size=1 borderless=true {
+            plugin location="status-bar"
+        }
+    }
     tab name="claude" focus=true {
         pane command="zsh" close_on_exit=true {
             args "-lc" "{{claude_cmd}}"

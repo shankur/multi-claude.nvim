@@ -98,8 +98,10 @@ function M.spawn(name, host)
 
   session.job_id = job_id
 
-  -- Map <Esc> in terminal mode to exit to normal mode
+  -- Map <Esc><Esc> in terminal mode to exit to normal mode
   vim.api.nvim_buf_set_keymap(buf, "t", "<Esc><Esc>", [[<C-\><C-n>]], { noremap = true, silent = true })
+  -- Pass Ctrl-l through to the terminal (Neovim intercepts it by default)
+  vim.api.nvim_buf_set_keymap(buf, "t", "<C-l>", "<C-l>", { noremap = true, silent = true })
 
   -- Track terminal output activity via buffer changes
   vim.api.nvim_buf_attach(buf, false, {

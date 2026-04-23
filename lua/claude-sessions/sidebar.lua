@@ -290,7 +290,7 @@ function M.open()
   vim.api.nvim_set_option_value("buftype", "nofile", { buf = M._sidebar_buf })
   vim.api.nvim_set_option_value("swapfile", false, { buf = M._sidebar_buf })
   vim.api.nvim_set_option_value("filetype", "claude-sessions", { buf = M._sidebar_buf })
-  vim.api.nvim_buf_set_name(M._sidebar_buf, "Claude Sessions")
+  vim.api.nvim_buf_set_name(M._sidebar_buf, "Claude Sessions " .. tostring(math.random(100000)))
 
   -- Create sidebar window
   local split_cmd = opts.position == "right" and "botright" or "topleft"

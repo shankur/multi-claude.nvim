@@ -35,6 +35,7 @@ local function setup_highlights()
   vim.api.nvim_set_hl(0, "ClaudeSessionTitle", { fg = "#cba6f7", bold = true, default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionBorder", { fg = "#585b70", default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionHostHeader", { fg = "#89b4fa", bold = true, default = true })
+  vim.api.nvim_set_hl(0, "ClaudeSessionMarker", { fg = "#cba6f7", bold = true, default = true })
 end
 
 function M.is_open()
@@ -131,6 +132,20 @@ function M.render()
   vim.api.nvim_buf_clear_namespace(M._sidebar_buf, ns, 0, -1)
   for _, hl in ipairs(highlights) do
     pcall(vim.api.nvim_buf_add_highlight, M._sidebar_buf, ns, hl.hl, hl.line, 0, -1)
+  end
+
+  -- Apply selection marker on selected session's line
+  local marker = config.options.selection_marker
+  if marker and marker ~= "" then
+    for line_idx, s in pairs(M._line_to_session) do
+      if s.id == M._selected_session_id then
+        pcall(vim.api.nvim_buf_set_extmark, M._sidebar_buf, ns, line_idx, 0, {
+          virt_text = { { marker, "ClaudeSessionMarker" } },
+          virt_text_pos = "inline",
+        })
+        break
+      end
+    end
   end
 end
 

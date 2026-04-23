@@ -4,6 +4,39 @@ local sidebar = require("claude-sessions.sidebar")
 
 local M = {}
 
+local marker_ns = vim.api.nvim_create_namespace("claude_picker_marker")
+
+--- Apply a selection marker to the current cursor line in a floating picker.
+--- Updates automatically as the cursor moves via CursorMoved autocmd.
+---@param buf number
+---@param win number
+---@param is_valid_row fun(row: number): boolean  returns true if row should show marker
+local function setup_picker_marker(buf, win, is_valid_row)
+  local marker = config.options.selection_marker
+  if not marker or marker == "" then return end
+
+  local function update(row)
+    vim.api.nvim_buf_clear_namespace(buf, marker_ns, 0, -1)
+    if is_valid_row(row) then
+      pcall(vim.api.nvim_buf_set_extmark, buf, marker_ns, row - 1, 0, {
+        virt_text = { { marker, "ClaudeSessionMarker" } },
+        virt_text_pos = "inline",
+      })
+    end
+  end
+
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = buf,
+    callback = function()
+      if vim.api.nvim_win_is_valid(win) then
+        update(vim.api.nvim_win_get_cursor(win)[1])
+      end
+    end,
+  })
+
+  update(vim.api.nvim_win_get_cursor(win)[1])
+end
+
 function M.setup(opts)
   config.setup(opts)
 end
@@ -99,6 +132,7 @@ function M.new_session(name)
 
   vim.api.nvim_set_option_value("cursorline", true, { win = win })
   vim.api.nvim_win_set_cursor(win, { 4, 0 })
+  setup_picker_marker(buf, win, function(row) return row_to_item[row - 1] ~= nil end)
 
   local function close_win()
     if vim.api.nvim_win_is_valid(win) then
@@ -372,6 +406,7 @@ function M.clean_remote_sessions()
 
   -- Place cursor on first data row
   vim.api.nvim_win_set_cursor(win, { 4, 0 })
+  setup_picker_marker(buf, win, function(row) return row_to_item[row - 1] ~= nil end)
 
   -- Keymaps
   local function close_win()
@@ -642,6 +677,7 @@ function M.jump_picker()
       break
     end
   end
+  setup_picker_marker(buf, win, function(row) return row_to_session[row - 1] ~= nil end)
 
   local function close_win()
     if vim.api.nvim_win_is_valid(win) then

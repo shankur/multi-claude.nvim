@@ -15,6 +15,7 @@ M.defaults = {
   auto_open = false,
   hosts = {}, -- { {name="server1", addr="user@host", cwd="~/project", ssh_args={}} }
   layout = nil, -- path to a custom zellij layout file, or nil to use built-in default
+  selection_marker = "▶", -- marker shown next to the selected item in pickers and sidebar
   keymaps = {
     select = "<CR>",
     new_session = "n",

@@ -508,4 +508,190 @@ function M.discover()
   sidebar.render()
 end
 
+--- Jump to a session by 1-based index (across all sessions in sidebar order).
+function M.jump_to_index(n)
+  if #session.sessions == 0 then return end
+  local s = session.sessions[n]
+  if not s then return end
+  sidebar._selected_session_id = s.id
+  local win = sidebar._main_win
+  if sidebar.is_open() then
+    sidebar.render()
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_buf(win, s.bufnr)
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("startinsert")
+    end
+  elseif config.options.auto_open then
+    sidebar.open()
+    win = sidebar._main_win
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_buf(win, s.bufnr)
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("startinsert")
+    end
+  end
+end
+
+--- Show a floating session picker grouped by host.
+function M.jump_picker()
+  if #session.sessions == 0 then
+    print("[claude] No active sessions")
+    return
+  end
+
+  local opts = config.options
+  local lines = {}
+  local highlights = {}
+  local row_to_session = {}
+
+  -- Group sessions like sidebar
+  local local_sessions = {}
+  local host_groups = {}
+  local host_order = {}
+  for _, s in ipairs(session.sessions) do
+    if not s.host then
+      table.insert(local_sessions, s)
+    else
+      local hname = s.host.name
+      if not host_groups[hname] then
+        host_groups[hname] = { sessions = {} }
+        table.insert(host_order, hname)
+      end
+      table.insert(host_groups[hname].sessions, s)
+    end
+  end
+
+  local function add_session_line(s, idx)
+    local icon = opts.icons[s.status] or "?"
+    local host_label = s.host and s.host.name:upper() or "LOCAL"
+    local line = string.format("  %s %-20s  %-8s  [%s]", icon, s.name, host_label, s.status)
+    local line_idx = #lines
+    table.insert(lines, line)
+    row_to_session[line_idx] = s
+    local hl = sidebar._session_hl(s)
+    table.insert(highlights, { line = line_idx, hl = hl })
+  end
+
+  -- Header
+  table.insert(lines, "  Jump to Session")
+  table.insert(highlights, { line = 0, hl = "ClaudeSessionTitle" })
+  table.insert(lines, "  " .. string.rep("\u{2500}", 46))
+  table.insert(highlights, { line = 1, hl = "ClaudeSessionBorder" })
+
+  -- Local sessions
+  if #local_sessions > 0 then
+    local h_idx = #lines
+    table.insert(lines, "  LOCAL")
+    table.insert(highlights, { line = h_idx, hl = "ClaudeSessionHostHeader" })
+    for i, s in ipairs(local_sessions) do
+      add_session_line(s, i)
+    end
+  end
+
+  -- Remote sessions
+  local first_remote = true
+  for _, hname in ipairs(host_order) do
+    if not first_remote or #local_sessions > 0 then
+      local sep_idx = #lines
+      table.insert(lines, "  " .. string.rep("\u{2500}", 46))
+      table.insert(highlights, { line = sep_idx, hl = "ClaudeSessionBorder" })
+    end
+    first_remote = false
+    local h_idx = #lines
+    table.insert(lines, "  " .. hname:upper())
+    table.insert(highlights, { line = h_idx, hl = "ClaudeSessionHostHeader" })
+    for i, s in ipairs(host_groups[hname].sessions) do
+      add_session_line(s, i)
+    end
+  end
+
+  table.insert(lines, "")
+  table.insert(lines, "  <CR> jump  \u{2502}  q / <Esc> close")
+  table.insert(highlights, { line = #lines - 1, hl = "ClaudeSessionDone" })
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+  vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
+
+  local win_width = 52
+  local win_height = #lines
+  local row = math.floor((vim.o.lines - win_height) / 2)
+  local col = math.floor((vim.o.columns - win_width) / 2)
+
+  local ns = vim.api.nvim_create_namespace("claude_jump")
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = row, col = col,
+    width = win_width, height = win_height,
+    style = "minimal", border = "rounded",
+  })
+
+  for _, hl in ipairs(highlights) do
+    pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl.hl, hl.line, 0, -1)
+  end
+
+  vim.api.nvim_set_option_value("cursorline", true, { win = win })
+
+  -- Place cursor on first session line
+  for r = 1, #lines do
+    if row_to_session[r - 1] then
+      vim.api.nvim_win_set_cursor(win, { r, 0 })
+      break
+    end
+  end
+
+  local function close_win()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+
+  local function do_jump()
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local s = row_to_session[cursor[1] - 1]
+    if not s then return end
+    close_win()
+    sidebar._selected_session_id = s.id
+    if not sidebar.is_open() then
+      sidebar.open()
+    else
+      sidebar.render()
+    end
+    local main_win = sidebar._main_win
+    if main_win and vim.api.nvim_win_is_valid(main_win) then
+      vim.api.nvim_win_set_buf(main_win, s.bufnr)
+      vim.api.nvim_set_current_win(main_win)
+      vim.cmd("startinsert")
+    end
+  end
+
+  local map_opts = { buffer = buf, noremap = true, silent = true, nowait = true }
+  vim.keymap.set("n", "<CR>", do_jump, map_opts)
+  vim.keymap.set("n", "q", close_win, map_opts)
+  vim.keymap.set("n", "<Esc>", close_win, map_opts)
+
+  vim.keymap.set("n", "j", function()
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    for r = cursor[1] + 1, #lines do
+      if row_to_session[r - 1] then
+        vim.api.nvim_win_set_cursor(win, { r, 0 })
+        return
+      end
+    end
+  end, map_opts)
+
+  vim.keymap.set("n", "k", function()
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    for r = cursor[1] - 1, 1, -1 do
+      if row_to_session[r - 1] then
+        vim.api.nvim_win_set_cursor(win, { r, 0 })
+        return
+      end
+    end
+  end, map_opts)
+end
+
 return M

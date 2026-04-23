@@ -44,13 +44,17 @@ All sessions run inside [Zellij](https://zellij.dev/) for persistence — close 
 ```lua
 {
   "shankur/multi-claude.nvim",
-  cmd = { "ClaudeSessions", "ClaudeNew", "ClaudeClose", "ClaudeNext", "ClaudePrev", "ClaudeList", "ClaudeClean", "ClaudeDiscover" },
+  cmd = { "ClaudeSessions", "ClaudeNew", "ClaudeClose", "ClaudeNext", "ClaudePrev", "ClaudeList", "ClaudeClean", "ClaudeDiscover", "ClaudeJump" },
   keys = {
     { "<leader>cc", "<cmd>ClaudeDiscover<cr>", desc = "Discover Claude Sessions" },
     { "<leader>cn", "<cmd>ClaudeNew<cr>",      desc = "New Claude Session" },
     { "<leader>cN", "<cmd>ClaudeNext<cr>",     desc = "Next Claude Session" },
     { "<leader>cP", "<cmd>ClaudePrev<cr>",     desc = "Prev Claude Session" },
     { "<leader>cx", "<cmd>ClaudeClean<cr>",    desc = "Clean Claude Sessions" },
+    { "<leader>cj", "<cmd>ClaudeJump<cr>",     desc = "Jump to Session (picker)" },
+    { "<leader>c1", "<cmd>ClaudeJump1<cr>",    desc = "Jump to Session 1" },
+    { "<leader>c2", "<cmd>ClaudeJump2<cr>",    desc = "Jump to Session 2" },
+    { "<leader>c3", "<cmd>ClaudeJump3<cr>",    desc = "Jump to Session 3" },
   },
   opts = {
     -- Optional: configure remote hosts
@@ -106,6 +110,8 @@ Each host entry supports:
 | `:ClaudeDiscover`  | Open sidebar and attach to all existing sessions |
 | `:ClaudeList <host>` | List and attach to sessions on a remote host |
 | `:ClaudeClean`     | Kill all sessions on a host (shows host picker) |
+| `:ClaudeJump`      | Floating picker to jump to any session by name  |
+| `:ClaudeJump1`-`:ClaudeJump9` | Jump directly to session by index   |
 
 ### Sidebar keymaps
 

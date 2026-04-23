@@ -35,3 +35,13 @@ end, { desc = "Clean all zellij sessions on a remote host" })
 vim.api.nvim_create_user_command("ClaudeDiscover", function()
   require("claude-sessions").discover()
 end, { desc = "Open sidebar and attach to all remote sessions" })
+
+vim.api.nvim_create_user_command("ClaudeJump", function()
+  require("claude-sessions").jump_picker()
+end, { desc = "Jump to a session via fuzzy picker" })
+
+for i = 1, 9 do
+  vim.api.nvim_create_user_command("ClaudeJump" .. i, function()
+    require("claude-sessions").jump_to_index(i)
+  end, { desc = "Jump to session " .. i })
+end

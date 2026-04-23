@@ -13,7 +13,7 @@ function M._format_session_line(s, opts, idx)
   local icon = opts.icons[s.status] or "?"
   local status_str = "[" .. s.status .. "]"
   local num = idx and (idx .. " ") or "  "
-  return " " .. num .. icon .. " " .. s.name .. " " .. status_str
+  return "  " .. num .. icon .. " " .. s.name .. " " .. status_str
 end
 
 function M._session_hl(s)
@@ -141,7 +141,7 @@ function M.render()
       if s.id == M._selected_session_id then
         pcall(vim.api.nvim_buf_set_extmark, M._sidebar_buf, ns, line_idx, 0, {
           virt_text = { { marker, "ClaudeSessionMarker" } },
-          virt_text_pos = "inline",
+          virt_text_pos = "overlay",
         })
         break
       end

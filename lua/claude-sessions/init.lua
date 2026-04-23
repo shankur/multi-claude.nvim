@@ -20,7 +20,7 @@ local function setup_picker_marker(buf, win, is_valid_row)
     if is_valid_row(row) then
       pcall(vim.api.nvim_buf_set_extmark, buf, marker_ns, row - 1, 0, {
         virt_text = { { marker, "ClaudeSessionMarker" } },
-        virt_text_pos = "inline",
+        virt_text_pos = "overlay",
       })
     end
   end

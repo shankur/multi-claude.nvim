@@ -46,8 +46,14 @@ local function build_layout(claude_cmd_str, cwd, session_name)
 
   return string.format([[
 layout {
-    pane size=1 borderless=true {
-        plugin location="zellij:tab-bar"
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="tab-bar"
+        }
+        children
+        pane size=1 borderless=true {
+            plugin location="status-bar"
+        }
     }
     tab name="claude" focus=true {
         pane command="zsh" close_on_exit=true {
@@ -109,13 +115,20 @@ function M.create_session(host, session_name)
   local start_str = "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
     .. vim.fn.shellescape(session_name)
     .. " --new-session-with-layout " .. tmp
-    .. " > /dev/null 2>&1 &"
+    .. " < /dev/null > /dev/null 2>&1 &"
   vim.list_extend(start_cmd, { "--", start_str })
   vim.fn.system(start_cmd)
   if vim.v.shell_error ~= 0 then return false end
 
-  vim.fn.system({ "sleep", "1" })
-  return true
+  -- Wait up to 5s for session to appear
+  for _ = 1, 5 do
+    vim.fn.system({ "sleep", "1" })
+    local sessions = M.list_sessions(host)
+    for _, name in ipairs(sessions) do
+      if name == session_name then return true end
+    end
+  end
+  return false
 end
 
 --- Return the command table for termopen() to attach to a remote zellij session.
@@ -201,12 +214,19 @@ function M.create_local_session(session_name)
     "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
     .. vim.fn.shellescape(session_name)
     .. " --new-session-with-layout " .. tmp
-    .. " > /dev/null 2>&1 &"
+    .. " < /dev/null > /dev/null 2>&1 &"
   })
   if vim.v.shell_error ~= 0 then return false end
 
-  vim.fn.system({ "sleep", "1" })
-  return true
+  -- Wait up to 5s for session to appear
+  for _ = 1, 5 do
+    vim.fn.system({ "sleep", "1" })
+    local sessions = M.list_local_sessions()
+    for _, name in ipairs(sessions) do
+      if name == session_name then return true end
+    end
+  end
+  return false
 end
 
 --- Return the command table for termopen() to attach to a local zellij session.

@@ -285,12 +285,20 @@ function M.open()
   -- Remember current window as main
   M._main_win = vim.api.nvim_get_current_win()
 
-  -- Create sidebar buffer
+  -- Create sidebar buffer, cleaning up any stale same-named buffers first
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name:match("Claude Sessions") then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+    end
+  end
   M._sidebar_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_option_value("buftype", "nofile", { buf = M._sidebar_buf })
   vim.api.nvim_set_option_value("swapfile", false, { buf = M._sidebar_buf })
   vim.api.nvim_set_option_value("filetype", "claude-sessions", { buf = M._sidebar_buf })
-  vim.api.nvim_buf_set_name(M._sidebar_buf, "Claude Sessions " .. tostring(math.random(100000)))
+  vim.api.nvim_buf_set_name(M._sidebar_buf, "Claude Sessions")
 
   -- Create sidebar window
   local split_cmd = opts.position == "right" and "botright" or "topleft"

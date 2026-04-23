@@ -13,6 +13,7 @@ M.defaults = {
   status_poll_ms = 1000,
   idle_threshold_ms = 2000, -- ms of no output before marking "waiting"
   auto_open = false,
+  hosts = {}, -- { {name="server1", addr="user@host", cwd="~/project", ssh_args={}} }
   keymaps = {
     select = "<CR>",
     new_session = "n",
@@ -22,7 +23,7 @@ M.defaults = {
   },
 }
 
-M.options = {}
+M.options = vim.deepcopy(M.defaults)
 
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})

@@ -18,3 +18,20 @@ end, { desc = "Switch to next Claude session" })
 vim.api.nvim_create_user_command("ClaudePrev", function()
   require("claude-sessions").prev_session()
 end, { desc = "Switch to previous Claude session" })
+
+vim.api.nvim_create_user_command("ClaudeList", function(opts)
+  local host_name = opts.args ~= "" and opts.args or nil
+  if not host_name then
+    vim.notify("Usage: :ClaudeList <host_name>", vim.log.levels.ERROR)
+    return
+  end
+  require("claude-sessions").list_remote_sessions(host_name)
+end, { nargs = "?", desc = "List and attach to remote zellij sessions" })
+
+vim.api.nvim_create_user_command("ClaudeClean", function()
+  require("claude-sessions").clean_remote_sessions()
+end, { desc = "Clean all zellij sessions on a remote host" })
+
+vim.api.nvim_create_user_command("ClaudeDiscover", function()
+  require("claude-sessions").discover()
+end, { desc = "Open sidebar and attach to all remote sessions" })

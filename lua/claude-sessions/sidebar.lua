@@ -9,6 +9,23 @@ M._selected_session_id = nil
 
 local ns = vim.api.nvim_create_namespace("claude_sessions")
 
+function M._format_session_line(s, opts)
+  local icon = opts.icons[s.status] or "?"
+  local status_str = "[" .. s.status .. "]"
+  return "  " .. icon .. " " .. s.name .. " " .. status_str
+end
+
+function M._session_hl(s)
+  if s.id == M._selected_session_id then
+    return "ClaudeSessionSelected"
+  elseif s.status == "working" then
+    return "ClaudeSessionWorking"
+  elseif s.status == "waiting" then
+    return "ClaudeSessionWaiting"
+  end
+  return "ClaudeSessionDone"
+end
+
 local function setup_highlights()
   vim.api.nvim_set_hl(0, "ClaudeSessionWorking", { fg = "#a6e3a1", bold = true, default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionWaiting", { fg = "#f9e2af", bold = true, default = true })
@@ -16,6 +33,7 @@ local function setup_highlights()
   vim.api.nvim_set_hl(0, "ClaudeSessionSelected", { fg = "#cdd6f4", bg = "#45475a", bold = true, default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionTitle", { fg = "#cba6f7", bold = true, default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionBorder", { fg = "#585b70", default = true })
+  vim.api.nvim_set_hl(0, "ClaudeSessionHostHeader", { fg = "#89b4fa", bold = true, default = true })
 end
 
 function M.is_open()
@@ -28,6 +46,8 @@ function M.render()
   local opts = config.options
   local lines = {}
   local highlights = {}
+  -- Maps line index (0-based) -> session, for cursor-to-session lookup
+  M._line_to_session = {}
 
   -- Header
   table.insert(lines, "  Claude Sessions")
@@ -41,27 +61,60 @@ function M.render()
     table.insert(lines, "")
     table.insert(lines, "  Press 'n' to create one")
   else
-    for _, session in ipairs(session_mod.sessions) do
-      local icon = opts.icons[session.status] or "?"
-      local status_str = "[" .. session.status .. "]"
-      local prefix = "  "
-      local line = prefix .. icon .. " " .. session.name .. " " .. status_str
-      local line_idx = #lines
-      table.insert(lines, line)
+    -- Group sessions: local first, then by host name
+    local local_sessions = {}
+    local host_groups = {} -- host_name -> { host, sessions }
+    local host_order = {}  -- preserve insertion order
 
-      -- Highlight based on status
-      local hl_group = "ClaudeSessionDone"
-      if session.status == "working" then
-        hl_group = "ClaudeSessionWorking"
-      elseif session.status == "waiting" then
-        hl_group = "ClaudeSessionWaiting"
-      end
-
-      -- Selected session gets special highlight
-      if session.id == M._selected_session_id then
-        table.insert(highlights, { line = line_idx, hl = "ClaudeSessionSelected" })
+    for _, s in ipairs(session_mod.sessions) do
+      if not s.host then
+        table.insert(local_sessions, s)
       else
-        table.insert(highlights, { line = line_idx, hl = hl_group })
+        local hname = s.host.name
+        if not host_groups[hname] then
+          host_groups[hname] = { host = s.host, sessions = {} }
+          table.insert(host_order, hname)
+        end
+        table.insert(host_groups[hname].sessions, s)
+      end
+    end
+
+    -- Render local sessions
+    if #local_sessions > 0 then
+      local header_idx = #lines
+      table.insert(lines, "  LOCAL")
+      table.insert(highlights, { line = header_idx, hl = "ClaudeSessionHostHeader" })
+
+      for _, s in ipairs(local_sessions) do
+        local line_idx = #lines
+        local line = M._format_session_line(s, opts)
+        table.insert(lines, line)
+        M._line_to_session[line_idx] = s
+        table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
+      end
+    end
+
+    -- Render each remote host group
+    for _, hname in ipairs(host_order) do
+      local group = host_groups[hname]
+      -- Only add separator if there are already session lines above
+      local has_content_above = #local_sessions > 0 or hname ~= host_order[1]
+      if has_content_above then
+        local sep_idx = #lines
+        table.insert(lines, "  " .. string.rep("\u{2500}", opts.sidebar_width - 4))
+        table.insert(highlights, { line = sep_idx, hl = "ClaudeSessionBorder" })
+      end
+      -- Host header
+      local header_idx = #lines
+      table.insert(lines, "  " .. hname:upper())
+      table.insert(highlights, { line = header_idx, hl = "ClaudeSessionHostHeader" })
+
+      for _, s in ipairs(group.sessions) do
+        local line_idx = #lines
+        local line = M._format_session_line(s, opts)
+        table.insert(lines, line)
+        M._line_to_session[line_idx] = s
+        table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
       end
     end
   end
@@ -81,13 +134,8 @@ end
 local function get_session_at_cursor()
   if not M.is_open() then return nil end
   local cursor = vim.api.nvim_win_get_cursor(M._sidebar_win)
-  local row = cursor[1] -- 1-indexed
-  local header_lines = 3 -- title, border, blank
-  local idx = row - header_lines
-  if idx >= 1 and idx <= #session_mod.sessions then
-    return session_mod.sessions[idx]
-  end
-  return nil
+  local row = cursor[1] - 1 -- convert to 0-indexed
+  return M._line_to_session and M._line_to_session[row] or nil
 end
 
 local function ensure_main_win()
@@ -118,7 +166,11 @@ local function switch_to_session(session)
     vim.api.nvim_win_set_buf(win, session.bufnr)
     -- Focus the main window and enter terminal mode
     vim.api.nvim_set_current_win(win)
+    -- Force a resize event so remote terminals (zellij) redraw correctly
     vim.cmd("startinsert")
+    vim.schedule(function()
+      vim.api.nvim_exec_autocmds("VimResized", {})
+    end)
   end
   M.render()
 end
@@ -193,6 +245,30 @@ local function setup_keymaps()
   -- Close sidebar
   vim.keymap.set("n", opts.close_sidebar, function()
     M.close()
+  end, map_opts)
+
+  -- Override j/k to skip non-session lines
+  vim.keymap.set("n", "j", function()
+    local cursor = vim.api.nvim_win_get_cursor(M._sidebar_win)
+    local row = cursor[1] -- 1-indexed
+    local total = vim.api.nvim_buf_line_count(M._sidebar_buf)
+    for r = row + 1, total do
+      if M._line_to_session[r - 1] then
+        vim.api.nvim_win_set_cursor(M._sidebar_win, { r, 0 })
+        return
+      end
+    end
+  end, map_opts)
+
+  vim.keymap.set("n", "k", function()
+    local cursor = vim.api.nvim_win_get_cursor(M._sidebar_win)
+    local row = cursor[1]
+    for r = row - 1, 1, -1 do
+      if M._line_to_session[r - 1] then
+        vim.api.nvim_win_set_cursor(M._sidebar_win, { r, 0 })
+        return
+      end
+    end
   end, map_opts)
 end
 

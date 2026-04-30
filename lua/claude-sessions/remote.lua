@@ -38,7 +38,7 @@ local function build_layout(claude_cmd_str, cwd, session_name)
     end
   end
 
-  -- Built-in default: 3 tabs — claude (focused), shell, shell
+  -- Built-in default: single tab with claude
   local kill_after = "zellij kill-session -y " .. vim.fn.shellescape(session_name)
     .. " && zellij delete-session " .. vim.fn.shellescape(session_name)
   local claude_inner = "unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after
@@ -61,14 +61,8 @@ layout {
             cwd %q
         }
     }
-    tab name="shell" {
-        pane cwd=%q
-    }
-    tab name="editor" {
-        pane command="nvim" cwd=%q
-    }
 }
-]], claude_inner, cwd_str, cwd_str, cwd_str)
+]], claude_inner, cwd_str)
 end
 
 --- Build the claude command string for a host.
@@ -184,9 +178,13 @@ end
 ---@param host table
 ---@param session_name string
 function M.kill_session(host, session_name)
-  local cmd = ssh_base(host)
-  vim.list_extend(cmd, { "--", "TERM=xterm-256color", "zellij", "delete-session", session_name })
-  vim.fn.system(cmd)
+  local kill_cmd = ssh_base(host)
+  vim.list_extend(kill_cmd, { "--", "TERM=xterm-256color", "zellij", "kill-session", "-y", session_name })
+  vim.fn.system(kill_cmd)
+
+  local del_cmd = ssh_base(host)
+  vim.list_extend(del_cmd, { "--", "TERM=xterm-256color", "zellij", "delete-session", session_name })
+  vim.fn.system(del_cmd)
 end
 
 --- Create a local zellij session running claude.

@@ -41,8 +41,8 @@ function M.setup(opts)
   config.setup(opts)
 end
 
---- Prompt for a working directory using vim.ui.select with configured paths.
---- Falls back to vim.fn.input with dir completion if no paths configured or "Other" selected.
+--- Prompt for a working directory using a fuzzy finder picker.
+--- Uses Snacks.picker if available, falls back to vim.ui.select.
 ---@param host table|nil
 ---@param callback fun(cwd: string|nil)
 function M._pick_cwd(host, callback)
@@ -50,16 +50,69 @@ function M._pick_cwd(host, callback)
   local default_cwd = (host and host.cwd) or opts.default_cwd or vim.fn.getcwd()
   local paths = opts.cwd_paths or {}
 
-  -- Build items list: default first, then configured paths (deduped), then "Other..."
+  -- Try snacks.picker for fuzzy directory finding
+  local has_snacks, snacks = pcall(require, "snacks")
+  if has_snacks and snacks.picker then
+    -- Build initial items from configured paths
+    local items = {}
+    for i, p in ipairs(paths) do
+      table.insert(items, {
+        text = vim.fn.expand(p),
+        idx = i,
+      })
+    end
+
+    local completed = false
+    snacks.picker({
+      title = "Working Directory",
+      items = #items > 0 and items or nil,
+      finder = #items == 0 and function(_, ctx)
+        return require("snacks.picker.source.proc").proc(ctx:opts({
+          cmd = "fd",
+          args = { "--type", "d", "--max-depth", "4", "--color", "never", "-E", ".git", ".", vim.fn.expand("~") },
+        }), ctx)
+      end or nil,
+      layout = { preset = "select" },
+      format = function(item)
+        local path = item.text
+        local home = vim.fn.expand("~")
+        if path:sub(1, #home) == home then
+          path = "~" .. path:sub(#home + 1)
+        end
+        return { { path } }
+      end,
+      actions = {
+        confirm = function(picker, item)
+          if completed then return end
+          completed = true
+          picker:close()
+          vim.schedule(function()
+            if item then
+              local path = item.text
+              local home = vim.fn.expand("~")
+              if path:sub(1, #home) == home then
+                path = "~" .. path:sub(#home + 1)
+              end
+              callback(path)
+            end
+          end)
+        end,
+      },
+      on_close = function()
+        if completed then return end
+        completed = true
+      end,
+    })
+    return
+  end
+
+  -- Fallback: vim.ui.select with configured paths
   local items = {}
   local seen = {}
-
-  -- Add default as first item
   local expanded_default = vim.fn.expand(default_cwd)
   table.insert(items, { path = default_cwd, display = default_cwd .. " (default)" })
   seen[expanded_default] = true
 
-  -- Add configured paths
   for _, p in ipairs(paths) do
     local expanded = vim.fn.expand(p)
     if not seen[expanded] then
@@ -68,13 +121,11 @@ function M._pick_cwd(host, callback)
     end
   end
 
-  -- If only the default path exists, skip the picker
   if #items == 1 and #paths == 0 then
     callback(default_cwd)
     return
   end
 
-  -- Add "Other..." option for custom input
   table.insert(items, { path = nil, display = "Other..." })
 
   vim.ui.select(items, {
@@ -83,11 +134,10 @@ function M._pick_cwd(host, callback)
       return item.display
     end,
   }, function(choice)
-    if not choice then return end -- cancelled
+    if not choice then return end
     if choice.path then
       callback(choice.path)
     else
-      -- "Other..." selected: show input with dir completion
       vim.ui.input({
         prompt = "Path: ",
         default = default_cwd,

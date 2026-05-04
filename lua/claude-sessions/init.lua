@@ -76,10 +76,20 @@ function M._pick_cwd(host, callback)
     snacks.picker({
       title = host and ("Working Directory (" .. host.name .. ")") or "Working Directory",
       finder = function(_, ctx)
-        return require("snacks.picker.source.proc").proc(ctx:opts({
-          cmd = fd_cmd,
-          args = fd_args,
-        }), ctx)
+        local proc = require("snacks.picker.source.proc")
+        -- Emit configured paths first, then fd results
+        return function(cb)
+          -- Add configured cwd_paths as pinned items at the top
+          for i, p in ipairs(paths) do
+            cb({ text = p, idx = i })
+          end
+          -- Then run fd for full directory listing
+          local fd_finder = proc.proc(ctx:opts({
+            cmd = fd_cmd,
+            args = fd_args,
+          }), ctx)
+          fd_finder(cb)
+        end
       end,
       layout = { preset = "select" },
       format = function(item)

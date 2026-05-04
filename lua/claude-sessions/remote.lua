@@ -86,7 +86,8 @@ end
 --- Create a detached zellij session running claude on a remote host.
 ---@param host table
 ---@param session_name string
-function M.create_session(host, session_name)
+---@param cwd string|nil  override working directory (nil uses host.cwd)
+function M.create_session(host, session_name, cwd)
   -- Check if session already exists
   local existing = M.list_sessions(host)
   for _, name in ipairs(existing) do
@@ -96,7 +97,8 @@ function M.create_session(host, session_name)
   end
 
   local claude_cmd_str = build_claude_cmd(host)
-  local layout_str = build_layout(claude_cmd_str, host.cwd, session_name)
+  local effective_cwd = cwd or host.cwd
+  local layout_str = build_layout(claude_cmd_str, effective_cwd, session_name)
 
   -- Write layout to a temp file on remote, start session with nohup, clean up
   local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"
@@ -189,7 +191,8 @@ end
 
 --- Create a local zellij session running claude.
 ---@param session_name string
-function M.create_local_session(session_name)
+---@param cwd string|nil  working directory (nil defaults to ~)
+function M.create_local_session(session_name, cwd)
   -- Check if session already exists
   local existing = M.list_local_sessions()
   for _, name in ipairs(existing) do
@@ -199,7 +202,7 @@ function M.create_local_session(session_name)
   end
 
   local claude_cmd_str = build_claude_cmd(nil)
-  local layout_str = build_layout(claude_cmd_str, nil, session_name)
+  local layout_str = build_layout(claude_cmd_str, cwd, session_name)
 
   -- Write layout to temp file and start session with nohup
   local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"

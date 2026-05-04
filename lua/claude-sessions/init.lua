@@ -41,6 +41,65 @@ function M.setup(opts)
   config.setup(opts)
 end
 
+--- Prompt for a working directory using vim.ui.select with configured paths.
+--- Falls back to vim.fn.input with dir completion if no paths configured or "Other" selected.
+---@param host table|nil
+---@param callback fun(cwd: string|nil)
+function M._pick_cwd(host, callback)
+  local opts = config.options
+  local default_cwd = (host and host.cwd) or opts.default_cwd or vim.fn.getcwd()
+  local paths = opts.cwd_paths or {}
+
+  -- Build items list: default first, then configured paths (deduped), then "Other..."
+  local items = {}
+  local seen = {}
+
+  -- Add default as first item
+  local expanded_default = vim.fn.expand(default_cwd)
+  table.insert(items, { path = default_cwd, display = default_cwd .. " (default)" })
+  seen[expanded_default] = true
+
+  -- Add configured paths
+  for _, p in ipairs(paths) do
+    local expanded = vim.fn.expand(p)
+    if not seen[expanded] then
+      seen[expanded] = true
+      table.insert(items, { path = p, display = p })
+    end
+  end
+
+  -- If only the default path exists, skip the picker
+  if #items == 1 and #paths == 0 then
+    callback(default_cwd)
+    return
+  end
+
+  -- Add "Other..." option for custom input
+  table.insert(items, { path = nil, display = "Other..." })
+
+  vim.ui.select(items, {
+    prompt = "Working directory:",
+    format_item = function(item)
+      return item.display
+    end,
+  }, function(choice)
+    if not choice then return end -- cancelled
+    if choice.path then
+      callback(choice.path)
+    else
+      -- "Other..." selected: show input with dir completion
+      vim.ui.input({
+        prompt = "Path: ",
+        default = default_cwd,
+        completion = "dir",
+      }, function(input)
+        if not input or input == "" then return end
+        callback(input)
+      end)
+    end
+  end)
+end
+
 function M.toggle()
   sidebar.toggle()
 end
@@ -57,8 +116,25 @@ function M.new_session(name)
   local hosts = config.options.hosts or {}
 
   if #hosts == 0 then
-    -- No remote hosts configured: spawn local immediately (original behavior)
-    M._spawn_and_show(name, nil)
+    -- No remote hosts configured: prompt for cwd then spawn local
+    local function do_spawn(session_name)
+      M._pick_cwd(nil, function(cwd)
+        if not cwd then return end
+        M._spawn_and_show(session_name, nil, cwd)
+      end)
+    end
+
+    if name then
+      do_spawn(name)
+    else
+      vim.ui.input({
+        prompt = "Session name: ",
+        default = "session-" .. session._next_id,
+      }, function(input_name)
+        if not input_name or input_name == "" then return end
+        do_spawn(input_name)
+      end)
+    end
     return
   end
 
@@ -147,15 +223,22 @@ function M.new_session(name)
 
     close_win()
 
+    local function spawn_with_cwd(session_name, host)
+      M._pick_cwd(host, function(cwd)
+        if not cwd then return end
+        M._spawn_and_show(session_name, host, cwd)
+      end)
+    end
+
     if name then
-      M._spawn_and_show(name, item.host)
+      spawn_with_cwd(name, item.host)
     else
       vim.ui.input({
         prompt = "Session name: ",
         default = "session-" .. session._next_id,
       }, function(input_name)
         if not input_name or input_name == "" then return end
-        M._spawn_and_show(input_name, item.host)
+        spawn_with_cwd(input_name, item.host)
       end)
     end
   end
@@ -186,9 +269,9 @@ function M.new_session(name)
   end, map_opts)
 end
 
-function M._spawn_and_show(name, host)
+function M._spawn_and_show(name, host, cwd)
   vim.schedule(function()
-    local ok, s = pcall(session.spawn, name, host)
+    local ok, s = pcall(session.spawn, name, host, cwd)
     if not ok or not s then return end
     sidebar._selected_session_id = s.id
 

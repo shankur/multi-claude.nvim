@@ -13,6 +13,8 @@ M.defaults = {
   status_poll_ms = 1000,
   idle_threshold_ms = 2000, -- ms of no output before marking "waiting"
   auto_open = false,
+  default_cwd = nil, -- default working directory for new sessions (nil = cwd)
+  cwd_paths = {}, -- list of frequently used paths for the cwd picker
   hosts = {}, -- { {name="server1", addr="user@host", cwd="~/project", ssh_args={}} }
   layout = nil, -- path to a custom zellij layout file, or nil to use built-in default
   selection_marker = "▶", -- marker shown next to the selected item in pickers and sidebar

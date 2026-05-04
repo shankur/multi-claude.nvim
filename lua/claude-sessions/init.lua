@@ -54,20 +54,41 @@ function M._pick_cwd(host, callback)
   local has_snacks, snacks = pcall(require, "snacks")
   if has_snacks and snacks.picker then
     local completed = false
+
+    -- Build fd command — run locally or over SSH for remote hosts
+    local fd_cmd, fd_args
+    if host then
+      fd_cmd = "ssh"
+      fd_args = {}
+      if host.ssh_args then
+        for _, arg in ipairs(host.ssh_args) do
+          table.insert(fd_args, arg)
+        end
+      end
+      table.insert(fd_args, host.addr)
+      table.insert(fd_args, "--")
+      table.insert(fd_args, "fd --type d --max-depth 4 --color never -E .git . ~")
+    else
+      fd_cmd = "fd"
+      fd_args = { "--type", "d", "--max-depth", "4", "--color", "never", "-E", ".git", ".", vim.fn.expand("~") }
+    end
+
     snacks.picker({
-      title = "Working Directory",
+      title = host and ("Working Directory (" .. host.name .. ")") or "Working Directory",
       finder = function(_, ctx)
         return require("snacks.picker.source.proc").proc(ctx:opts({
-          cmd = "fd",
-          args = { "--type", "d", "--max-depth", "4", "--color", "never", "-E", ".git", ".", vim.fn.expand("~") },
+          cmd = fd_cmd,
+          args = fd_args,
         }), ctx)
       end,
       layout = { preset = "select" },
       format = function(item)
         local path = item.text
-        local home = vim.fn.expand("~")
-        if path:sub(1, #home) == home then
-          path = "~" .. path:sub(#home + 1)
+        if not host then
+          local home = vim.fn.expand("~")
+          if path:sub(1, #home) == home then
+            path = "~" .. path:sub(#home + 1)
+          end
         end
         return { { path } }
       end,
@@ -79,9 +100,11 @@ function M._pick_cwd(host, callback)
           vim.schedule(function()
             if item then
               local path = item.text
-              local home = vim.fn.expand("~")
-              if path:sub(1, #home) == home then
-                path = "~" .. path:sub(#home + 1)
+              if not host then
+                local home = vim.fn.expand("~")
+                if path:sub(1, #home) == home then
+                  path = "~" .. path:sub(#home + 1)
+                end
               end
               callback(path)
             end

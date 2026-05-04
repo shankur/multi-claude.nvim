@@ -67,7 +67,7 @@ function M._pick_cwd(host, callback)
       end
       table.insert(fd_args, host.addr)
       table.insert(fd_args, "--")
-      table.insert(fd_args, "fd --type d --max-depth 4 --color never -E .git . ~")
+      table.insert(fd_args, "fd --type d --max-depth 5 --color never -E .git -E proc -E sys -E dev -E run -E snap . /")
     else
       fd_cmd = "fd"
       fd_args = { "--type", "d", "--max-depth", "4", "--color", "never", "-E", ".git", ".", vim.fn.expand("~") }

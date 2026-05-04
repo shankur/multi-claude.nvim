@@ -152,7 +152,7 @@ function M.close()
   sidebar.close()
 end
 
-function M.new_session(name)
+function M.new_session(name, extra_args)
   local hosts = config.options.hosts or {}
 
   if #hosts == 0 then
@@ -160,7 +160,7 @@ function M.new_session(name)
     local function do_spawn(session_name)
       M._pick_cwd(nil, function(cwd)
         if not cwd then return end
-        M._spawn_and_show(session_name, nil, cwd)
+        M._spawn_and_show(session_name, nil, cwd, extra_args)
       end)
     end
 
@@ -266,7 +266,7 @@ function M.new_session(name)
     local function spawn_with_cwd(session_name, host)
       M._pick_cwd(host, function(cwd)
         if not cwd then return end
-        M._spawn_and_show(session_name, host, cwd)
+        M._spawn_and_show(session_name, host, cwd, extra_args)
       end)
     end
 
@@ -309,9 +309,9 @@ function M.new_session(name)
   end, map_opts)
 end
 
-function M._spawn_and_show(name, host, cwd)
+function M._spawn_and_show(name, host, cwd, extra_args)
   vim.schedule(function()
-    local ok, s = pcall(session.spawn, name, host, cwd)
+    local ok, s = pcall(session.spawn, name, host, cwd, extra_args)
     if not ok or not s then return end
     sidebar._selected_session_id = s.id
 
@@ -338,6 +338,10 @@ function M._spawn_and_show(name, host, cwd)
 
     return s
   end)
+end
+
+function M.resume_session(name)
+  M.new_session(name, { "--resume" })
 end
 
 function M.close_session(id)

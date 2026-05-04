@@ -74,8 +74,9 @@ end
 
 --- Build the claude command string for a host.
 ---@param host table|nil
+---@param extra_args string[]|nil  additional CLI args (e.g. {"--resume"})
 ---@return string
-local function build_claude_cmd(host)
+local function build_claude_cmd(host, extra_args)
   local opts = config.options
   local cmd = opts.claude_cmd
   if host and host.model then
@@ -87,6 +88,9 @@ local function build_claude_cmd(host)
   for _, arg in ipairs(opts.claude_args) do
     cmd = cmd .. " " .. arg
   end
+  for _, arg in ipairs(extra_args or {}) do
+    cmd = cmd .. " " .. arg
+  end
   return cmd
 end
 
@@ -94,7 +98,8 @@ end
 ---@param host table
 ---@param session_name string
 ---@param cwd string|nil  override working directory (nil uses host.cwd)
-function M.create_session(host, session_name, cwd)
+---@param extra_args string[]|nil  additional claude CLI args
+function M.create_session(host, session_name, cwd, extra_args)
   local zname = zellij_name(session_name)
   -- Check if session already exists
   local existing = M.list_sessions(host)
@@ -104,7 +109,7 @@ function M.create_session(host, session_name, cwd)
     end
   end
 
-  local claude_cmd_str = build_claude_cmd(host)
+  local claude_cmd_str = build_claude_cmd(host, extra_args)
   local effective_cwd = cwd or host.cwd
   local layout_str = build_layout(claude_cmd_str, effective_cwd, zname)
 
@@ -197,7 +202,8 @@ end
 --- Create a local zellij session running claude.
 ---@param session_name string
 ---@param cwd string|nil  working directory (nil defaults to ~)
-function M.create_local_session(session_name, cwd)
+---@param extra_args string[]|nil  additional claude CLI args
+function M.create_local_session(session_name, cwd, extra_args)
   local zname = zellij_name(session_name)
   -- Check if session already exists
   local existing = M.list_local_sessions()
@@ -207,7 +213,7 @@ function M.create_local_session(session_name, cwd)
     end
   end
 
-  local claude_cmd_str = build_claude_cmd(nil)
+  local claude_cmd_str = build_claude_cmd(nil, extra_args)
   local layout_str = build_layout(claude_cmd_str, cwd, zname)
 
   -- Write layout to temp file and start session with nohup

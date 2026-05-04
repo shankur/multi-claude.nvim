@@ -7,6 +7,11 @@ vim.api.nvim_create_user_command("ClaudeNew", function(opts)
   require("claude-sessions").new_session(name)
 end, { nargs = "?", desc = "Create a new Claude session" })
 
+vim.api.nvim_create_user_command("ClaudeResume", function(opts)
+  local name = opts.args ~= "" and opts.args or nil
+  require("claude-sessions").resume_session(name)
+end, { nargs = "?", desc = "Resume a Claude session (--resume)" })
+
 vim.api.nvim_create_user_command("ClaudeClose", function()
   require("claude-sessions").close_session()
 end, { desc = "Close current Claude session" })

@@ -11,7 +11,7 @@ local function create_session_buf()
   return buf
 end
 
-function M.spawn(name, host, cwd)
+function M.spawn(name, host, cwd, extra_args)
   local opts = config.options
   local buf = create_session_buf()
   local session = {
@@ -30,14 +30,14 @@ function M.spawn(name, host, cwd)
   local cmd
   if host then
     local remote = require("claude-sessions.remote")
-    if not remote.create_session(host, session.name, cwd) then
+    if not remote.create_session(host, session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return nil
     end
     cmd = remote.attach_cmd(host, session.name)
   else
     local remote = require("claude-sessions.remote")
-    if not remote.create_local_session(session.name, cwd) then
+    if not remote.create_local_session(session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return nil
     end

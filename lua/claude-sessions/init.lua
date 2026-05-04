@@ -53,25 +53,15 @@ function M._pick_cwd(host, callback)
   -- Try snacks.picker for fuzzy directory finding
   local has_snacks, snacks = pcall(require, "snacks")
   if has_snacks and snacks.picker then
-    -- Build initial items from configured paths
-    local items = {}
-    for i, p in ipairs(paths) do
-      table.insert(items, {
-        text = vim.fn.expand(p),
-        idx = i,
-      })
-    end
-
     local completed = false
     snacks.picker({
       title = "Working Directory",
-      items = #items > 0 and items or nil,
-      finder = #items == 0 and function(_, ctx)
+      finder = function(_, ctx)
         return require("snacks.picker.source.proc").proc(ctx:opts({
           cmd = "fd",
           args = { "--type", "d", "--max-depth", "4", "--color", "never", "-E", ".git", ".", vim.fn.expand("~") },
         }), ctx)
-      end or nil,
+      end,
       layout = { preset = "select" },
       format = function(item)
         local path = item.text

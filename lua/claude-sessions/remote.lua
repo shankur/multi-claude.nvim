@@ -48,7 +48,7 @@ local function build_layout(claude_cmd_str, cwd, zellij_session_name)
   -- Built-in default: single tab with claude
   local kill_after = "zellij kill-session " .. vim.fn.shellescape(zellij_session_name)
     .. " && zellij delete-session " .. vim.fn.shellescape(zellij_session_name)
-  local claude_inner = "unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after
+  local claude_inner = "export _ZO_DOCTOR=0; unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after
   local cwd_str = cwd or "~"
 
   return string.format([[

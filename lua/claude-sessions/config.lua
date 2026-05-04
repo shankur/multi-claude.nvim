@@ -13,6 +13,7 @@ M.defaults = {
   status_poll_ms = 1000,
   idle_threshold_ms = 2000, -- ms of no output before marking "waiting"
   auto_open = false,
+  session_prefix = "claude-", -- prefix for zellij session names (filters discover to plugin sessions only)
   default_cwd = nil, -- default working directory for new sessions (nil = cwd)
   cwd_paths = {}, -- list of frequently used paths for the cwd picker
   hosts = {}, -- { {name="server1", addr="user@host", cwd="~/project", ssh_args={}} }

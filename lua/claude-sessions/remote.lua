@@ -2,6 +2,13 @@ local config = require("claude-sessions.config")
 
 local M = {}
 
+--- Return the zellij session name (prefixed) for a display name.
+---@param name string
+---@return string
+local function zellij_name(name)
+  return (config.options.session_prefix or "") .. name
+end
+
 --- Build the base SSH command for a host.
 ---@param host table { name, addr, ssh_args? }
 ---@return table
@@ -19,9 +26,9 @@ end
 --- Build the zellij layout KDL string for a session.
 ---@param claude_cmd_str string  full claude command to run
 ---@param cwd string|nil  working directory
----@param session_name string  used in the kill-after command
+---@param zellij_session_name string  prefixed zellij session name (used in kill-after command)
 ---@return string
-local function build_layout(claude_cmd_str, cwd, session_name)
+local function build_layout(claude_cmd_str, cwd, zellij_session_name)
   local opts = config.options
   local layout_file = opts.layout
 
@@ -39,8 +46,8 @@ local function build_layout(claude_cmd_str, cwd, session_name)
   end
 
   -- Built-in default: single tab with claude
-  local kill_after = "zellij kill-session -y " .. vim.fn.shellescape(session_name)
-    .. " && zellij delete-session " .. vim.fn.shellescape(session_name)
+  local kill_after = "zellij kill-session " .. vim.fn.shellescape(zellij_session_name)
+    .. " && zellij delete-session " .. vim.fn.shellescape(zellij_session_name)
   local claude_inner = "unalias exit 2>/dev/null; " .. claude_cmd_str .. "; " .. kill_after
   local cwd_str = cwd or "~"
 
@@ -88,6 +95,7 @@ end
 ---@param session_name string
 ---@param cwd string|nil  override working directory (nil uses host.cwd)
 function M.create_session(host, session_name, cwd)
+  local zname = zellij_name(session_name)
   -- Check if session already exists
   local existing = M.list_sessions(host)
   for _, name in ipairs(existing) do
@@ -98,10 +106,10 @@ function M.create_session(host, session_name, cwd)
 
   local claude_cmd_str = build_claude_cmd(host)
   local effective_cwd = cwd or host.cwd
-  local layout_str = build_layout(claude_cmd_str, effective_cwd, session_name)
+  local layout_str = build_layout(claude_cmd_str, effective_cwd, zname)
 
   -- Write layout to a temp file on remote, start session with nohup, clean up
-  local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"
+  local tmp = "/tmp/zellij-layout-" .. zname .. ".kdl"
   local write_cmd = ssh_base(host)
   vim.list_extend(write_cmd, { "--", "cat > " .. tmp })
   vim.fn.system(write_cmd, layout_str)
@@ -109,7 +117,7 @@ function M.create_session(host, session_name, cwd)
 
   local start_cmd = ssh_base(host)
   local start_str = "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
-    .. vim.fn.shellescape(session_name)
+    .. vim.fn.shellescape(zname)
     .. " --new-session-with-layout " .. tmp
     .. " < /dev/null > /dev/null 2>&1 &"
   vim.list_extend(start_cmd, { "--", start_str })
@@ -139,7 +147,7 @@ function M.attach_cmd(host, session_name)
     end
   end
   local remote_cmd = "export ZELLIJ=skip TERM=xterm-256color; zellij attach "
-    .. vim.fn.shellescape(session_name)
+    .. vim.fn.shellescape(zellij_name(session_name))
   vim.list_extend(cmd, { host.addr, "--", remote_cmd })
   return cmd
 end
@@ -149,31 +157,31 @@ end
 ---@return table list of session name strings
 function M.list_sessions(host)
   local cmd = ssh_base(host)
-  vim.list_extend(cmd, { "--", "TERM=xterm-256color", "zellij", "list-sessions", "--short" })
+  vim.list_extend(cmd, { "--", "TERM=xterm-256color ZELLIJ=skip zellij list-sessions --short" })
   local output = vim.fn.system(cmd)
   if vim.v.shell_error ~= 0 then
     return {}
   end
+  local prefix = config.options.session_prefix or ""
   local sessions = {}
   for line in output:gmatch("[^\r\n]+") do
     local name = line:match("^(%S+)")
-    if name and name ~= "" then
+    if name and name ~= "" and prefix ~= "" and name:sub(1, #prefix) == prefix then
+      table.insert(sessions, name:sub(#prefix + 1))
+    elseif name and name ~= "" and prefix == "" then
       table.insert(sessions, name)
     end
   end
   return sessions
 end
 
---- Kill all zellij sessions on a remote host.
+--- Kill all plugin-managed zellij sessions on a remote host.
 ---@param host table
 function M.kill_all_sessions(host)
-  local kill_cmd = ssh_base(host)
-  vim.list_extend(kill_cmd, { "--", "TERM=xterm-256color", "zellij", "kill-all-sessions", "-y" })
-  vim.fn.system(kill_cmd)
-
-  local delete_cmd = ssh_base(host)
-  vim.list_extend(delete_cmd, { "--", "TERM=xterm-256color", "zellij", "delete-all-sessions", "-y" })
-  vim.fn.system(delete_cmd)
+  local sessions = M.list_sessions(host)
+  for _, name in ipairs(sessions) do
+    M.kill_session(host, name)
+  end
 end
 
 --- Kill a zellij session on a remote host.
@@ -181,18 +189,16 @@ end
 ---@param session_name string
 function M.kill_session(host, session_name)
   local kill_cmd = ssh_base(host)
-  vim.list_extend(kill_cmd, { "--", "TERM=xterm-256color", "zellij", "kill-session", "-y", session_name })
+  local name = vim.fn.shellescape(zellij_name(session_name))
+  vim.list_extend(kill_cmd, { "--", "TERM=xterm-256color ZELLIJ=skip zellij kill-session " .. name .. " 2>/dev/null; ZELLIJ=skip zellij delete-session " .. name .. " 2>/dev/null" })
   vim.fn.system(kill_cmd)
-
-  local del_cmd = ssh_base(host)
-  vim.list_extend(del_cmd, { "--", "TERM=xterm-256color", "zellij", "delete-session", session_name })
-  vim.fn.system(del_cmd)
 end
 
 --- Create a local zellij session running claude.
 ---@param session_name string
 ---@param cwd string|nil  working directory (nil defaults to ~)
 function M.create_local_session(session_name, cwd)
+  local zname = zellij_name(session_name)
   -- Check if session already exists
   local existing = M.list_local_sessions()
   for _, name in ipairs(existing) do
@@ -202,10 +208,10 @@ function M.create_local_session(session_name, cwd)
   end
 
   local claude_cmd_str = build_claude_cmd(nil)
-  local layout_str = build_layout(claude_cmd_str, cwd, session_name)
+  local layout_str = build_layout(claude_cmd_str, cwd, zname)
 
   -- Write layout to temp file and start session with nohup
-  local tmp = "/tmp/zellij-layout-" .. session_name .. ".kdl"
+  local tmp = "/tmp/zellij-layout-" .. zname .. ".kdl"
   local f = io.open(tmp, "w")
   if not f then return false end
   f:write(layout_str)
@@ -213,7 +219,7 @@ function M.create_local_session(session_name, cwd)
 
   vim.fn.system({ "zsh", "-c",
     "TERM=xterm-256color ZELLIJ=skip nohup zellij --session "
-    .. vim.fn.shellescape(session_name)
+    .. vim.fn.shellescape(zname)
     .. " --new-session-with-layout " .. tmp
     .. " < /dev/null > /dev/null 2>&1 &"
   })
@@ -234,37 +240,42 @@ end
 ---@param session_name string
 ---@return table
 function M.local_attach_cmd(session_name)
-  return { "zellij", "attach", session_name }
+  return { "zsh", "-c", "ZELLIJ=skip zellij attach " .. vim.fn.shellescape(zellij_name(session_name)) }
 end
 
 --- List local zellij sessions.
 ---@return table
 function M.list_local_sessions()
-  local output = vim.fn.system({ "zellij", "list-sessions", "--short" })
+  local output = vim.fn.system({ "zsh", "-c", "ZELLIJ=skip zellij list-sessions --short" })
   if vim.v.shell_error ~= 0 then
     return {}
   end
+  local prefix = config.options.session_prefix or ""
   local sessions = {}
   for line in output:gmatch("[^\r\n]+") do
     local name = line:match("^(%S+)")
-    if name and name ~= "" then
+    if name and name ~= "" and prefix ~= "" and name:sub(1, #prefix) == prefix then
+      table.insert(sessions, name:sub(#prefix + 1))
+    elseif name and name ~= "" and prefix == "" then
       table.insert(sessions, name)
     end
   end
   return sessions
 end
 
---- Kill all local zellij sessions.
+--- Kill all plugin-managed local zellij sessions.
 function M.kill_all_local_sessions()
-  vim.fn.system({ "zellij", "kill-all-sessions", "-y" })
-  vim.fn.system({ "zellij", "delete-all-sessions", "-y" })
+  local sessions = M.list_local_sessions()
+  for _, name in ipairs(sessions) do
+    M.kill_local_session(name)
+  end
 end
 
 --- Kill a local zellij session.
 ---@param session_name string
 function M.kill_local_session(session_name)
-  vim.fn.system({ "zellij", "kill-session", "-y", session_name })
-  vim.fn.system({ "zellij", "delete-session", session_name })
+  local name = vim.fn.shellescape(zellij_name(session_name))
+  vim.fn.system({ "zsh", "-c", "ZELLIJ=skip zellij kill-session " .. name .. " 2>/dev/null; ZELLIJ=skip zellij delete-session " .. name .. " 2>/dev/null" })
 end
 
 --- Find a host config by name.

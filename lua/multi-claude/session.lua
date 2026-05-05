@@ -58,6 +58,61 @@ local function create_session_buf()
   return buf
 end
 
+--- Write text directly to a zellij session pane, bypassing nested PTY buffers.
+--- Used for large pastes that would otherwise be truncated at 4096-byte PTY boundaries.
+---@param session table
+---@param text string
+local function zellij_write_chars(session, text)
+  local zname = (config.options.session_prefix or "") .. session.name
+  local write_cmd
+  if session.host then
+    local remote = require("multi-claude.remote")
+    local ssh = remote.ssh_base(session.host)
+    write_cmd = table.concat(ssh, " ")
+      .. " -- ZELLIJ=skip zellij action write-chars --session "
+      .. vim.fn.shellescape(zname) .. " " .. vim.fn.shellescape(text)
+  else
+    write_cmd = "ZELLIJ=skip zellij action write-chars --session "
+      .. vim.fn.shellescape(zname) .. " " .. vim.fn.shellescape(text)
+  end
+  vim.fn.system(write_cmd)
+end
+
+--- Set up a custom paste handler that bypasses the nested PTY buffer limit.
+--- Overrides vim.paste when the session's terminal buffer is focused.
+---@param buf number
+---@param session table
+local function setup_paste_handler(buf, session)
+  local orig_paste = nil
+
+  vim.api.nvim_create_autocmd("BufEnter", {
+    buffer = buf,
+    callback = function()
+      orig_paste = vim.paste
+      vim.paste = function(lines, phase)
+        if phase == -1 or phase == 1 then
+          local text = table.concat(lines, "\n")
+          if text ~= "" then
+            zellij_write_chars(session, text)
+          end
+          return true
+        end
+        return true
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufLeave", {
+    buffer = buf,
+    callback = function()
+      if orig_paste then
+        vim.paste = orig_paste
+        orig_paste = nil
+      end
+    end,
+  })
+end
+
 function M.spawn(name, host, cwd, extra_args)
   local opts = config.options
   local buf = create_session_buf()
@@ -151,6 +206,9 @@ function M.spawn(name, host, cwd, extra_args)
   vim.api.nvim_buf_set_keymap(buf, "t", "<Esc><Esc>", [[<C-\><C-n>]], { noremap = true, silent = true })
   -- Pass Ctrl-l through to the terminal (Neovim intercepts it by default)
   vim.api.nvim_buf_set_keymap(buf, "t", "<C-l>", "<C-l>", { noremap = true, silent = true })
+
+  -- Bypass nested PTY buffer limit for large pastes
+  setup_paste_handler(buf, session)
 
   -- Track terminal output activity via buffer changes
   vim.api.nvim_buf_attach(buf, false, {
@@ -293,6 +351,10 @@ function M.attach(name, host)
 
   session.job_id = job_id
   vim.api.nvim_buf_set_keymap(buf, "t", "<Esc><Esc>", [[<C-\><C-n>]], { noremap = true, silent = true })
+
+  -- Bypass nested PTY buffer limit for large pastes
+  setup_paste_handler(buf, session)
+
   vim.api.nvim_buf_attach(buf, false, {
     on_lines = function()
       session.last_output_at = vim.uv.now()

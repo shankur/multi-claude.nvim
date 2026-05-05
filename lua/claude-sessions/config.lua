@@ -1,7 +1,7 @@
 local M = {}
 
 M.defaults = {
-  sidebar_width = 35,
+  sidebar_width = 30,  -- minimum sidebar width (actual width adapts to content or 25% of screen)
   position = "left", -- "left" or "right"
   claude_cmd = "claude",
   claude_args = {},
@@ -9,7 +9,9 @@ M.defaults = {
     working = "●",
     waiting = "◉",
     done = "○",
+    worktree = "\238\156\165",  -- nf-dev-git_branch (U+E725)
   },
+  group_by_cwd = true,
   status_poll_ms = 1000,
   idle_threshold_ms = 2000, -- ms of no output before marking "waiting"
   auto_open = false,

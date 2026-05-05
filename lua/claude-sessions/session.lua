@@ -5,6 +5,53 @@ M.sessions = {}
 M._next_id = 1
 M._poll_timer = nil
 
+--- Detect git status of a cwd: "worktree", "repo", or nil (not a git repo).
+---@param cwd string|nil
+---@param host table|nil
+---@return string|nil  "worktree", "repo", or nil
+local function detect_git_type(cwd, host)
+  if not cwd then return nil end
+  local cmd
+  if host then
+    local remote = require("claude-sessions.remote")
+    local ssh = remote.ssh_base(host)
+    cmd = table.concat(ssh, " ") .. " -- git -C " .. vim.fn.shellescape(cwd)
+      .. " rev-parse --git-common-dir --git-dir 2>/dev/null"
+  else
+    cmd = "git -C " .. vim.fn.shellescape(vim.fn.expand(cwd))
+      .. " rev-parse --git-common-dir --git-dir 2>/dev/null"
+  end
+  local output = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then return nil end
+  local lines = {}
+  for line in output:gmatch("[^\r\n]+") do table.insert(lines, line) end
+  if #lines < 2 then return nil end
+  -- If git-common-dir != git-dir, it's a worktree
+  if lines[1] ~= lines[2] then return "worktree" end
+  return "repo"
+end
+
+--- Query the cwd of an existing zellij session by dumping its layout.
+---@param zellij_session_name string
+---@param host table|nil
+---@return string|nil
+local function query_session_cwd(zellij_session_name, host)
+  local cmd
+  if host then
+    local remote = require("claude-sessions.remote")
+    local ssh = remote.ssh_base(host)
+    cmd = table.concat(ssh, " ") .. " -- ZELLIJ=skip zellij action --session "
+      .. vim.fn.shellescape(zellij_session_name) .. " dump-layout 2>/dev/null"
+  else
+    cmd = "ZELLIJ=skip zellij action --session "
+      .. vim.fn.shellescape(zellij_session_name) .. " dump-layout 2>/dev/null"
+  end
+  local output = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then return nil end
+  -- Parse first cwd "..." from KDL output
+  return output:match('cwd%s+"([^"]+)"') or output:match("cwd%s+(%S+)")
+end
+
 local function create_session_buf()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_option_value("bufhidden", "hide", { buf = buf })
@@ -23,6 +70,8 @@ function M.spawn(name, host, cwd, extra_args)
     created_at = os.time(),
     last_output_at = vim.uv.now(), -- ms timestamp of last terminal output
     host = host, -- nil = local, table = remote host config
+    cwd = cwd,
+    git_type = detect_git_type(cwd, host),  -- "worktree", "repo", or nil
   }
   M._next_id = M._next_id + 1
 
@@ -172,6 +221,12 @@ end
 function M.attach(name, host)
   local remote = require("claude-sessions.remote")
   local buf = create_session_buf()
+
+  -- Query cwd from the running zellij session
+  local prefix = config.options.session_prefix or ""
+  local zname = prefix .. name
+  local cwd = query_session_cwd(zname, host)
+
   local session = {
     id = M._next_id,
     name = name,
@@ -181,6 +236,8 @@ function M.attach(name, host)
     created_at = os.time(),
     last_output_at = vim.uv.now(),
     host = host,
+    cwd = cwd,
+    git_type = detect_git_type(cwd, host),  -- "worktree", "repo", or nil
   }
   M._next_id = M._next_id + 1
 

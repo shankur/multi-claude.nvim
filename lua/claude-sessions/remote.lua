@@ -12,7 +12,7 @@ end
 --- Build the base SSH command for a host.
 ---@param host table { name, addr, ssh_args? }
 ---@return table
-local function ssh_base(host)
+function M.ssh_base(host)
   local cmd = { "ssh" }
   if host.ssh_args then
     for _, arg in ipairs(host.ssh_args) do
@@ -22,6 +22,8 @@ local function ssh_base(host)
   table.insert(cmd, host.addr)
   return cmd
 end
+
+local ssh_base = M.ssh_base
 
 --- Build the zellij layout KDL string for a session.
 ---@param claude_cmd_str string  full claude command to run

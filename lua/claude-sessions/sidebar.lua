@@ -11,9 +11,60 @@ local ns = vim.api.nvim_create_namespace("claude_sessions")
 
 function M._format_session_line(s, opts, idx)
   local icon = opts.icons[s.status] or "?"
-  local status_str = "[" .. s.status .. "]"
   local num = idx and (idx .. " ") or "  "
-  return "  " .. num .. icon .. " " .. s.name .. " " .. status_str
+  return "  " .. num .. icon .. " " .. s.name
+end
+
+--- Shorten a path zsh-style: intermediate dirs become first char, last component stays full.
+--- e.g. ~/Repositories/multi-claude.nvim → ~/R/multi-claude.nvim
+---@param path string
+---@return string
+local function shorten_path(path)
+  local parts = {}
+  for part in path:gmatch("[^/]+") do
+    table.insert(parts, part)
+  end
+  if #parts <= 1 then return path end
+  -- Keep prefix (~ or first component) and last component full, shorten middle
+  local result = {}
+  for i, part in ipairs(parts) do
+    if i == #parts then
+      -- Last component: keep full
+      table.insert(result, part)
+    elseif part == "~" then
+      table.insert(result, "~")
+    elseif i == 1 and path:sub(1, 1) == "/" then
+      -- Root-level dir after /: shorten
+      table.insert(result, part:sub(1, 1))
+    else
+      -- Intermediate: first char only
+      table.insert(result, part:sub(1, 1))
+    end
+  end
+  local shortened = table.concat(result, "/")
+  if path:sub(1, 1) == "/" and shortened:sub(1, 1) ~= "~" then
+    shortened = "/" .. shortened
+  end
+  return shortened
+end
+
+--- Build the inline cwd suffix for a session line.
+---@param s table session
+---@param opts table config options
+---@return string|nil suffix text (without leading spaces), nil if no cwd
+function M._format_cwd_suffix(s, opts)
+  if not s.cwd or s.cwd == "" then return nil end
+  local display = s.cwd
+  local home = vim.fn.expand("~")
+  if display:sub(1, #home) == home then
+    display = "~" .. display:sub(#home + 1)
+  end
+  local short = shorten_path(display)
+  if s.git_type == "worktree" then
+    local wt_icon = opts.icons.worktree or "\238\156\165"
+    return wt_icon .. " " .. short
+  end
+  return short
 end
 
 function M._session_hl(s)
@@ -36,6 +87,9 @@ local function setup_highlights()
   vim.api.nvim_set_hl(0, "ClaudeSessionBorder", { fg = "#585b70", default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionHostHeader", { fg = "#89b4fa", bold = true, default = true })
   vim.api.nvim_set_hl(0, "ClaudeSessionMarker", { fg = "#cba6f7", bold = true, default = true })
+  vim.api.nvim_set_hl(0, "ClaudeSessionCwd", { fg = "#a6adc8", italic = true, default = true })
+  vim.api.nvim_set_hl(0, "ClaudeSessionRepo", { fg = "#a6e3a1", italic = true, default = true })
+  vim.api.nvim_set_hl(0, "ClaudeSessionWorktree", { fg = "#fab387", italic = true, default = true })
 end
 
 function M.is_open()
@@ -51,10 +105,15 @@ function M.render()
   -- Maps line index (0-based) -> session, for cursor-to-session lookup
   M._line_to_session = {}
 
-  -- Header
+  -- Compute effective sidebar width: max(min_width, 25% of screen, content_width)
+  -- We'll determine content_width after building lines, then adjust
+  local min_width = opts.sidebar_width or 30
+
+  -- Header (placeholder width, will adjust separator after content is built)
   table.insert(lines, "  Claude Sessions")
   table.insert(highlights, { line = 0, hl = "ClaudeSessionTitle" })
-  table.insert(lines, "  " .. string.rep("\u{2500}", opts.sidebar_width - 4))
+  local separator_line_idx = 1
+  table.insert(lines, "")  -- placeholder for separator
   table.insert(highlights, { line = 1, hl = "ClaudeSessionBorder" })
   table.insert(lines, "")
 
@@ -81,20 +140,58 @@ function M.render()
       end
     end
 
+    --- Render a list of sessions with inline cwd suffix.
+    local function render_session_group(sessions)
+      -- First pass: compute max session line width for alignment
+      local session_lines = {}
+      local max_line_width = 0
+      for _, s in ipairs(sessions) do
+        local idx = session_mod.get_index(s.id)
+        local line = M._format_session_line(s, opts, idx)
+        local width = vim.fn.strdisplaywidth(line)
+        if width > max_line_width then max_line_width = width end
+        table.insert(session_lines, { session = s, line = line, width = width })
+      end
+
+      -- Second pass: render with aligned separators
+      for _, entry in ipairs(session_lines) do
+        local s = entry.session
+        local line = entry.line
+        local line_idx = #lines
+        local cwd_suffix = opts.group_by_cwd and M._format_cwd_suffix(s, opts) or nil
+        if cwd_suffix then
+          local sep = "\u{2502}"  -- │ thin vertical bar separator
+          local pad = max_line_width - entry.width + 1
+          line = line .. string.rep(" ", pad) .. sep .. " " .. cwd_suffix
+        end
+        table.insert(lines, line)
+        M._line_to_session[line_idx] = s
+        table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
+        -- Apply cwd highlight to just the suffix portion (use byte offset)
+        if cwd_suffix then
+          -- Separator highlight
+          local sep_byte = "\u{2502}"
+          local sep_start = #line - #cwd_suffix - #sep_byte - 1
+          table.insert(highlights, { line = line_idx, hl = "ClaudeSessionBorder", col_start = sep_start, col_end = sep_start + #sep_byte })
+          -- Cwd path highlight
+          local suffix_byte_start = #line - #cwd_suffix
+          local hl = "ClaudeSessionCwd"
+          if s.git_type == "worktree" then
+            hl = "ClaudeSessionWorktree"
+          elseif s.git_type == "repo" then
+            hl = "ClaudeSessionRepo"
+          end
+          table.insert(highlights, { line = line_idx, hl = hl, col_start = suffix_byte_start, col_end = -1 })
+        end
+      end
+    end
+
     -- Render local sessions
     if #local_sessions > 0 then
       local header_idx = #lines
       table.insert(lines, "  LOCAL")
       table.insert(highlights, { line = header_idx, hl = "ClaudeSessionHostHeader" })
-
-      for _, s in ipairs(local_sessions) do
-        local line_idx = #lines
-        local idx = session_mod.get_index(s.id)
-        local line = M._format_session_line(s, opts, idx)
-        table.insert(lines, line)
-        M._line_to_session[line_idx] = s
-        table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
-      end
+      render_session_group(local_sessions)
     end
 
     -- Render each remote host group
@@ -104,22 +201,30 @@ function M.render()
       local has_content_above = #local_sessions > 0 or hname ~= host_order[1]
       if has_content_above then
         local sep_idx = #lines
-        table.insert(lines, "  " .. string.rep("\u{2500}", opts.sidebar_width - 4))
+        table.insert(lines, "")  -- separator placeholder, filled after width calc
         table.insert(highlights, { line = sep_idx, hl = "ClaudeSessionBorder" })
       end
       -- Host header
       local header_idx = #lines
       table.insert(lines, "  " .. hname:upper())
       table.insert(highlights, { line = header_idx, hl = "ClaudeSessionHostHeader" })
+      render_session_group(group.sessions)
+    end
+  end
 
-      for _, s in ipairs(group.sessions) do
-        local line_idx = #lines
-        local idx = session_mod.get_index(s.id)
-        local line = M._format_session_line(s, opts, idx)
-        table.insert(lines, line)
-        M._line_to_session[line_idx] = s
-        table.insert(highlights, { line = line_idx, hl = M._session_hl(s) })
-      end
+  -- Compute dynamic width: fit content, never below min_width
+  local content_width = 0
+  for _, line in ipairs(lines) do
+    local w = vim.fn.strdisplaywidth(line)
+    if w > content_width then content_width = w end
+  end
+  local effective_width = math.max(min_width, content_width + 2)
+
+  -- Fill separator placeholders (empty lines that have ClaudeSessionBorder highlight)
+  local sep_str = "  " .. string.rep("\u{2500}", effective_width - 4)
+  for _, hl in ipairs(highlights) do
+    if hl.hl == "ClaudeSessionBorder" and lines[hl.line + 1] == "" then
+      lines[hl.line + 1] = sep_str
     end
   end
 
@@ -128,10 +233,17 @@ function M.render()
   vim.api.nvim_buf_set_lines(M._sidebar_buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("modifiable", false, { buf = M._sidebar_buf })
 
+  -- Resize sidebar window to fit content
+  if M._sidebar_win and vim.api.nvim_win_is_valid(M._sidebar_win) then
+    vim.api.nvim_win_set_width(M._sidebar_win, effective_width)
+  end
+
   -- Apply highlights
   vim.api.nvim_buf_clear_namespace(M._sidebar_buf, ns, 0, -1)
   for _, hl in ipairs(highlights) do
-    pcall(vim.api.nvim_buf_add_highlight, M._sidebar_buf, ns, hl.hl, hl.line, 0, -1)
+    local col_start = hl.col_start or 0
+    local col_end = hl.col_end or -1
+    pcall(vim.api.nvim_buf_add_highlight, M._sidebar_buf, ns, hl.hl, hl.line, col_start, col_end)
   end
 
   -- Apply selection marker on selected session's line

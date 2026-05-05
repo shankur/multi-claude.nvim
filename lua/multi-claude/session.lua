@@ -64,16 +64,20 @@ end
 ---@param text string
 local function zellij_write_chars(session, text)
   local zname = (config.options.session_prefix or "") .. session.name
+  -- Base64 encode to safely pass multi-line text through SSH
+  local encoded = vim.fn.system("base64", text):gsub("%s+", "")
+  local remote_script = 'ZELLIJ=skip zellij --session '
+    .. vim.fn.shellescape(zname)
+    .. ' action write-chars "$(echo '
+    .. vim.fn.shellescape(encoded)
+    .. ' | base64 -d)"'
   local write_cmd
   if session.host then
     local remote = require("multi-claude.remote")
     local ssh = remote.ssh_base(session.host)
-    write_cmd = table.concat(ssh, " ")
-      .. " -- ZELLIJ=skip zellij --session "
-      .. vim.fn.shellescape(zname) .. " action write-chars " .. vim.fn.shellescape(text)
+    write_cmd = table.concat(ssh, " ") .. " -- " .. vim.fn.shellescape(remote_script)
   else
-    write_cmd = "ZELLIJ=skip zellij --session "
-      .. vim.fn.shellescape(zname) .. " action write-chars " .. vim.fn.shellescape(text)
+    write_cmd = remote_script
   end
   vim.fn.system(write_cmd)
 end

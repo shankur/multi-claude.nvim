@@ -79,12 +79,12 @@ local function zellij_write_chars(session, text)
 end
 
 --- Set up a custom paste handler that bypasses the nested PTY buffer limit.
---- Uses a terminal-mode keymap for Ctrl+V and a normal-mode "p" keymap
---- to write directly to zellij, avoiding the double-nested PTY truncation.
+--- Overrides vim.paste to write directly to zellij when the current buffer
+--- is a session terminal buffer, avoiding double-nested PTY truncation.
 ---@param buf number
 ---@param session table
 local function setup_paste_handler(buf, session)
-  -- Terminal mode: Ctrl+V pastes via zellij write-chars
+  -- Terminal mode: Ctrl+V also pastes via zellij write-chars
   vim.api.nvim_buf_set_keymap(buf, "t", "<C-v>", "", {
     noremap = true, silent = true,
     callback = function()
@@ -109,10 +109,66 @@ local function setup_paste_handler(buf, session)
       if text and text ~= "" then
         zellij_write_chars(session, text)
       end
-      -- Re-enter terminal mode after paste
       vim.cmd("startinsert")
     end,
   })
+end
+
+--- Global paste override. Installed once, checks if current buffer is a session buffer.
+--- If so, writes via zellij; otherwise delegates to the original vim.paste.
+local _paste_installed = false
+
+local function install_paste_override()
+  if _paste_installed then return end
+  _paste_installed = true
+
+  local orig_paste = vim.paste
+  local paste_accumulator = {}
+
+  vim.paste = function(lines, phase)
+    -- Check if current buffer belongs to a session
+    local cur_buf = vim.api.nvim_get_current_buf()
+    local target_session = nil
+    for _, s in ipairs(M.sessions) do
+      if s.bufnr == cur_buf then
+        target_session = s
+        break
+      end
+    end
+
+    -- Not a session buffer — use original paste
+    if not target_session then
+      return orig_paste(lines, phase)
+    end
+
+    -- Single-call paste (non-streaming)
+    if phase == -1 then
+      local text = table.concat(lines, "\n")
+      if text ~= "" then
+        zellij_write_chars(target_session, text)
+      end
+      return true
+    end
+
+    -- Streaming paste: accumulate chunks
+    if phase == 1 then
+      paste_accumulator = vim.deepcopy(lines)
+      return true
+    elseif phase == 2 then
+      vim.list_extend(paste_accumulator, lines)
+      return true
+    elseif phase == 3 then
+      vim.list_extend(paste_accumulator, lines)
+      local text = table.concat(paste_accumulator, "\n")
+      if text ~= "" then
+        zellij_write_chars(target_session, text)
+      end
+      paste_accumulator = {}
+      return true
+    end
+
+    return orig_paste(lines, phase)
+  end
 end
 
 function M.spawn(name, host, cwd, extra_args)
@@ -211,6 +267,7 @@ function M.spawn(name, host, cwd, extra_args)
 
   -- Bypass nested PTY buffer limit for large pastes
   setup_paste_handler(buf, session)
+  install_paste_override()
 
   -- Track terminal output activity via buffer changes
   vim.api.nvim_buf_attach(buf, false, {
@@ -356,6 +413,7 @@ function M.attach(name, host)
 
   -- Bypass nested PTY buffer limit for large pastes
   setup_paste_handler(buf, session)
+  install_paste_override()
 
   vim.api.nvim_buf_attach(buf, false, {
     on_lines = function()

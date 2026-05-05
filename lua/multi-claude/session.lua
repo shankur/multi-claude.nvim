@@ -185,6 +185,7 @@ function M.spawn(name, host, cwd, extra_args)
     local remote = require("multi-claude.remote")
     if not remote.create_session(host, session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      vim.notify("[multi-claude] Failed to create session on " .. host.name, vim.log.levels.ERROR)
       return nil
     end
     cmd = remote.attach_cmd(host, session.name)
@@ -192,6 +193,7 @@ function M.spawn(name, host, cwd, extra_args)
     local remote = require("multi-claude.remote")
     if not remote.create_local_session(session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      vim.notify("[multi-claude] Failed to create local session", vim.log.levels.ERROR)
       return nil
     end
     cmd = remote.local_attach_cmd(session.name)

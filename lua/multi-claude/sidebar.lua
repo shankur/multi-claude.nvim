@@ -460,7 +460,12 @@ end
 
 function M.close()
   if M._sidebar_win and vim.api.nvim_win_is_valid(M._sidebar_win) then
-    vim.api.nvim_win_close(M._sidebar_win, true)
+    -- Don't close if it's the last window
+    if #vim.api.nvim_tabpage_list_wins(0) > 1 then
+      vim.api.nvim_win_close(M._sidebar_win, true)
+    else
+      return
+    end
   end
   M._sidebar_win = nil
   if M._sidebar_buf and vim.api.nvim_buf_is_valid(M._sidebar_buf) then

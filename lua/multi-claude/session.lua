@@ -79,7 +79,7 @@ local function zellij_write_chars(session, text)
 end
 
 --- Set up a custom paste handler that bypasses the nested PTY buffer limit.
---- Overrides vim.paste when the session's terminal buffer is focused.
+--- Overrides vim.paste when the session's terminal buffer is focused and in terminal mode.
 ---@param buf number
 ---@param session table
 local function setup_paste_handler(buf, session)
@@ -90,14 +90,42 @@ local function setup_paste_handler(buf, session)
     callback = function()
       orig_paste = vim.paste
       vim.paste = function(lines, phase)
-        if phase == -1 or phase == 1 then
+        -- Only intercept in terminal mode; fall through otherwise
+        local mode = vim.fn.mode()
+        if mode ~= "t" then
+          return orig_paste(lines, phase)
+        end
+        -- Accumulate streaming pastes, send on final phase
+        if phase == -1 then
+          -- Single-call paste
           local text = table.concat(lines, "\n")
           if text ~= "" then
             zellij_write_chars(session, text)
           end
           return true
+        elseif phase == 1 then
+          -- Start of streaming paste — accumulate
+          session._paste_buf = lines
+          return true
+        elseif phase == 2 then
+          -- Continue streaming
+          if session._paste_buf then
+            vim.list_extend(session._paste_buf, lines)
+          end
+          return true
+        elseif phase == 3 then
+          -- End of streaming paste
+          if session._paste_buf then
+            vim.list_extend(session._paste_buf, lines)
+            local text = table.concat(session._paste_buf, "\n")
+            if text ~= "" then
+              zellij_write_chars(session, text)
+            end
+            session._paste_buf = nil
+          end
+          return true
         end
-        return true
+        return orig_paste(lines, phase)
       end
     end,
   })

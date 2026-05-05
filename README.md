@@ -170,7 +170,7 @@ For remote sessions, the plugin:
 All options with their defaults:
 
 ```lua
-require("claude-sessions").setup({
+require("multi-claude").setup({
   sidebar_width = 35,
   position = "left",           -- "left" or "right"
   claude_cmd = "claude",       -- path to claude binary
@@ -208,7 +208,7 @@ Each session is created with a 3-tab layout by default:
 To use a custom layout file, set the `layout` option:
 
 ```lua
-require("claude-sessions").setup({
+require("multi-claude").setup({
   layout = "~/.config/zellij/layouts/claude-session.kdl",
 })
 ```

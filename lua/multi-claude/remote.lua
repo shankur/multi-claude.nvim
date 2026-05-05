@@ -1,4 +1,4 @@
-local config = require("claude-sessions.config")
+local config = require("multi-claude.config")
 
 local M = {}
 
@@ -84,7 +84,7 @@ local function build_claude_cmd(host, extra_args)
   if host and host.model then
     cmd = cmd .. " --model '" .. host.model .. "'"
   end
-  if host and host.skip_permissions then
+  if opts.skip_permissions or (host and host.skip_permissions) then
     cmd = cmd .. " --dangerously-skip-permissions"
   end
   for _, arg in ipairs(opts.claude_args) do

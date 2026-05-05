@@ -1,4 +1,4 @@
-local config = require("claude-sessions.config")
+local config = require("multi-claude.config")
 
 local M = {}
 M.sessions = {}
@@ -13,7 +13,7 @@ local function detect_git_type(cwd, host)
   if not cwd then return nil end
   local cmd
   if host then
-    local remote = require("claude-sessions.remote")
+    local remote = require("multi-claude.remote")
     local ssh = remote.ssh_base(host)
     cmd = table.concat(ssh, " ") .. " -- git -C " .. vim.fn.shellescape(cwd)
       .. " rev-parse --git-common-dir --git-dir 2>/dev/null"
@@ -38,7 +38,7 @@ end
 local function query_session_cwd(zellij_session_name, host)
   local cmd
   if host then
-    local remote = require("claude-sessions.remote")
+    local remote = require("multi-claude.remote")
     local ssh = remote.ssh_base(host)
     cmd = table.concat(ssh, " ") .. " -- ZELLIJ=skip zellij action --session "
       .. vim.fn.shellescape(zellij_session_name) .. " dump-layout 2>/dev/null"
@@ -78,14 +78,14 @@ function M.spawn(name, host, cwd, extra_args)
   -- Build command
   local cmd
   if host then
-    local remote = require("claude-sessions.remote")
+    local remote = require("multi-claude.remote")
     if not remote.create_session(host, session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return nil
     end
     cmd = remote.attach_cmd(host, session.name)
   else
-    local remote = require("claude-sessions.remote")
+    local remote = require("multi-claude.remote")
     if not remote.create_local_session(session.name, cwd, extra_args) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
       return nil
@@ -102,7 +102,7 @@ function M.spawn(name, host, cwd, extra_args)
   local job_id = vim.fn.termopen(cmd, {
     on_exit = function(_, exit_code, _)
       vim.schedule(function()
-        local sidebar = require("claude-sessions.sidebar")
+        local sidebar = require("multi-claude.sidebar")
 
         -- If this was the selected session, switch to another first
         -- so deleting the buffer doesn't destroy the main window
@@ -191,7 +191,7 @@ function M.close(id)
   end
 
   -- Kill zellij session
-  local remote = require("claude-sessions.remote")
+  local remote = require("multi-claude.remote")
   if session.host then
     remote.kill_session(session.host, session.name)
   else
@@ -219,7 +219,7 @@ end
 
 --- Attach to an existing zellij session (no create step).
 function M.attach(name, host)
-  local remote = require("claude-sessions.remote")
+  local remote = require("multi-claude.remote")
   local buf = create_session_buf()
 
   -- Query cwd from the running zellij session
@@ -256,7 +256,7 @@ function M.attach(name, host)
   local job_id = vim.fn.termopen(cmd, {
     on_exit = function(_, _, _)
       vim.schedule(function()
-        local sidebar = require("claude-sessions.sidebar")
+        local sidebar = require("multi-claude.sidebar")
         if sidebar._selected_session_id == session.id then
           local next_session = nil
           for _, s in ipairs(M.sessions) do
@@ -326,7 +326,7 @@ function M.poll_status()
   for _, session in ipairs(M.sessions) do
     detect_status(session)
   end
-  local sidebar = require("claude-sessions.sidebar")
+  local sidebar = require("multi-claude.sidebar")
   if sidebar.is_open() then
     sidebar.render()
   end

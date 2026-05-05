@@ -1,6 +1,6 @@
-local config = require("claude-sessions.config")
-local session = require("claude-sessions.session")
-local sidebar = require("claude-sessions.sidebar")
+local config = require("multi-claude.config")
+local session = require("multi-claude.session")
+local sidebar = require("multi-claude.sidebar")
 
 local M = {}
 
@@ -424,7 +424,7 @@ function M.prev_session()
 end
 
 function M.list_remote_sessions(host_name)
-  local remote = require("claude-sessions.remote")
+  local remote = require("multi-claude.remote")
   local host = remote.get_host(host_name)
   if not host then
     vim.notify("Unknown host: " .. host_name, vim.log.levels.ERROR)
@@ -475,7 +475,7 @@ end
 
 function M.clean_remote_sessions()
   local hosts = config.options.hosts or {}
-  local remote = require("claude-sessions.remote")
+  local remote = require("multi-claude.remote")
   local items = {}
 
   -- Check local sessions
@@ -641,7 +641,7 @@ end
 
 function M.discover()
   local hosts = config.options.hosts or {}
-  local remote = require("claude-sessions.remote")
+  local remote = require("multi-claude.remote")
 
   -- Open sidebar
   if not sidebar.is_open() then

@@ -1,5 +1,5 @@
-local config = require("claude-sessions.config")
-local session_mod = require("claude-sessions.session")
+local config = require("multi-claude.config")
+local session_mod = require("multi-claude.session")
 
 local M = {}
 M._sidebar_buf = nil
@@ -320,7 +320,7 @@ local function setup_keymaps()
 
   -- New session
   vim.keymap.set("n", opts.new_session, function()
-    local cs = require("claude-sessions")
+    local cs = require("multi-claude")
     cs.new_session()
   end, map_opts)
 
@@ -427,7 +427,7 @@ function M.open()
   M._sidebar_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_option_value("buftype", "nofile", { buf = M._sidebar_buf })
   vim.api.nvim_set_option_value("swapfile", false, { buf = M._sidebar_buf })
-  vim.api.nvim_set_option_value("filetype", "claude-sessions", { buf = M._sidebar_buf })
+  vim.api.nvim_set_option_value("filetype", "multi-claude", { buf = M._sidebar_buf })
   vim.api.nvim_buf_set_name(M._sidebar_buf, "Claude Sessions")
 
   -- Create sidebar window

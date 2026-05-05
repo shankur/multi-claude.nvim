@@ -5,6 +5,7 @@ M.defaults = {
   position = "left", -- "left" or "right"
   claude_cmd = "claude",
   claude_args = {},
+  skip_permissions = false, -- pass --dangerously-skip-permissions to all sessions
   icons = {
     working = "●",
     waiting = "◉",

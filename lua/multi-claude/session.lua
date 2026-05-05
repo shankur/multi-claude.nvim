@@ -69,11 +69,11 @@ local function zellij_write_chars(session, text)
     local remote = require("multi-claude.remote")
     local ssh = remote.ssh_base(session.host)
     write_cmd = table.concat(ssh, " ")
-      .. " -- ZELLIJ=skip zellij action write-chars --session "
-      .. vim.fn.shellescape(zname) .. " " .. vim.fn.shellescape(text)
+      .. " -- ZELLIJ=skip zellij --session "
+      .. vim.fn.shellescape(zname) .. " action write-chars " .. vim.fn.shellescape(text)
   else
-    write_cmd = "ZELLIJ=skip zellij action write-chars --session "
-      .. vim.fn.shellescape(zname) .. " " .. vim.fn.shellescape(text)
+    write_cmd = "ZELLIJ=skip zellij --session "
+      .. vim.fn.shellescape(zname) .. " action write-chars " .. vim.fn.shellescape(text)
   end
   vim.fn.system(write_cmd)
 end

@@ -79,64 +79,38 @@ local function zellij_write_chars(session, text)
 end
 
 --- Set up a custom paste handler that bypasses the nested PTY buffer limit.
---- Overrides vim.paste when the session's terminal buffer is focused and in terminal mode.
+--- Uses a terminal-mode keymap for Ctrl+V and a normal-mode "p" keymap
+--- to write directly to zellij, avoiding the double-nested PTY truncation.
 ---@param buf number
 ---@param session table
 local function setup_paste_handler(buf, session)
-  local orig_paste = nil
-
-  vim.api.nvim_create_autocmd("BufEnter", {
-    buffer = buf,
+  -- Terminal mode: Ctrl+V pastes via zellij write-chars
+  vim.api.nvim_buf_set_keymap(buf, "t", "<C-v>", "", {
+    noremap = true, silent = true,
     callback = function()
-      orig_paste = vim.paste
-      vim.paste = function(lines, phase)
-        -- Only intercept in terminal mode; fall through otherwise
-        local mode = vim.fn.mode()
-        if mode ~= "t" then
-          return orig_paste(lines, phase)
-        end
-        -- Accumulate streaming pastes, send on final phase
-        if phase == -1 then
-          -- Single-call paste
-          local text = table.concat(lines, "\n")
-          if text ~= "" then
-            zellij_write_chars(session, text)
-          end
-          return true
-        elseif phase == 1 then
-          -- Start of streaming paste — accumulate
-          session._paste_buf = lines
-          return true
-        elseif phase == 2 then
-          -- Continue streaming
-          if session._paste_buf then
-            vim.list_extend(session._paste_buf, lines)
-          end
-          return true
-        elseif phase == 3 then
-          -- End of streaming paste
-          if session._paste_buf then
-            vim.list_extend(session._paste_buf, lines)
-            local text = table.concat(session._paste_buf, "\n")
-            if text ~= "" then
-              zellij_write_chars(session, text)
-            end
-            session._paste_buf = nil
-          end
-          return true
-        end
-        return orig_paste(lines, phase)
+      local text = vim.fn.getreg("+")
+      if not text or text == "" then
+        text = vim.fn.getreg("*")
+      end
+      if text and text ~= "" then
+        zellij_write_chars(session, text)
       end
     end,
   })
 
-  vim.api.nvim_create_autocmd("BufLeave", {
-    buffer = buf,
+  -- Normal mode: "p" pastes via zellij write-chars
+  vim.api.nvim_buf_set_keymap(buf, "n", "p", "", {
+    noremap = true, silent = true,
     callback = function()
-      if orig_paste then
-        vim.paste = orig_paste
-        orig_paste = nil
+      local text = vim.fn.getreg("+")
+      if not text or text == "" then
+        text = vim.fn.getreg("*")
       end
+      if text and text ~= "" then
+        zellij_write_chars(session, text)
+      end
+      -- Re-enter terminal mode after paste
+      vim.cmd("startinsert")
     end,
   })
 end
